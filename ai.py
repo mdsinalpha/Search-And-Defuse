@@ -20,7 +20,6 @@ class AI(RealtimeAI):
         self.done = False
 
     def initialize(self):
-        print('initialize')
 
         self.DIRECTIONS = [
             ECommandDirection.Up,
@@ -51,7 +50,7 @@ class AI(RealtimeAI):
 
 
     def decide(self):
-        '''print('decide')
+        '''Stupid strategy
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
         for agent in my_agents:
             if agent.status == EAgentStatus.Dead:
@@ -95,9 +94,6 @@ class AI(RealtimeAI):
             pass
         # print(self.world.constants.bomb_defusion_time)
         
-        for agent in my_agents:  
-            self.move(agent.id, random.choice(self._empty_directions(agent.position)))
-
 
     def plant(self, agent_id, bombsite_direction):
         self.send_command(PlantBomb(id=agent_id, direction=bombsite_direction))
@@ -153,10 +149,7 @@ class AI(RealtimeAI):
             before_count = bomb_sounds_before.count(intensity)
             after_count = bomb_sounds_after.count(intensity)
             if before_count != 0 or after_count != 0:
-                if before_count <= after_count:
-                    return True
-                else:
-                    return False
+                return before_count <= after_count:
         return False
         
         

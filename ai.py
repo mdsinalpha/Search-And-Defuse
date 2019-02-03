@@ -43,6 +43,12 @@ class AI(RealtimeAI):
             ECell.VastBombSite,
         ]
 
+        self.ESOUND_INTENSITIES = [
+            ESoundIntensity.Strong,
+            ESoundIntensity.Normal,
+            ESoundIntensity.Weak
+        ]
+
 
     def decide(self):
         '''print('decide')
@@ -143,6 +149,15 @@ class AI(RealtimeAI):
         return abs(first.x - second.x) + abs(first.y - second.y)
 
     def _sounds_a_good_way(self, bomb_sounds_before:list, bomb_sounds_after:list):
-        # TODO
-        pass
+        for intensity in self.ESOUND_INTENSITIES:
+            before_count = bomb_sounds_before.count(intensity)
+            after_count = bomb_sounds_after.count(intensity)
+            if before_count != 0 or after_count != 0:
+                if before_count <= after_count:
+                    return True
+                else:
+                    return False
+        return False
+        
+        
 

@@ -11,6 +11,7 @@ from ks.models import (World, Police, Terrorist, Bomb, Position, Constants,
                        ESoundIntensity, ECell, EAgentStatus)
 from ks.commands import DefuseBomb, PlantBomb, Move, ECommandDirection
 
+from math import *
 
 class AI(RealtimeAI):
 
@@ -44,8 +45,7 @@ class AI(RealtimeAI):
 
 
     def decide(self):
-        print('decide')
-
+        '''print('decide')
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
         for agent in my_agents:
             if agent.status == EAgentStatus.Dead:
@@ -66,7 +66,31 @@ class AI(RealtimeAI):
                 if self.my_side == 'Police':
                     self.defuse(agent.id, bombsite_direction)
                 else:
-                    self.plant(agent.id, bombsite_direction)
+                    self.plant(agent.id, bombsite_direction)'''
+        
+        my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
+
+        if self.my_side == 'Police':
+            for agent in my_agents:
+                # First Police Strategy 
+                # When a police is defusing a bomb, we let him complete his operation:)
+                if agent.defusion_remaining_time != -1:
+                    continue
+                # Second Police Strategy
+                elif self.world.bomb:
+                    for bomb in self.world.bomb:
+                        distance = _distance(agent.position, bomb.position)
+                        if distance < self.world.constants.police_vision_distance:
+                            # TODO Check wether bomb is going to explode when police arrives, add to blacklist
+                            # TODO Walk to bomb or defuse it
+                            pass            
+        else:
+            # Terrorist know about a police position when police is near
+            pass
+        # print(self.world.constants.bomb_defusion_time)
+        
+        for agent in my_agents:  
+            self.move(agent.id, random.choice(self._empty_directions(agent.position)))
 
 
     def plant(self, agent_id, bombsite_direction):
@@ -114,3 +138,11 @@ class AI(RealtimeAI):
 
     def _agent_print(self, agent_id, text):
         print('Agent[{}]: {}'.format(agent_id, text))
+
+    def _distance(self, first:Position, second:Position):
+        return abs(first.x - second.x) + abs(first.y - second.y)
+
+    def _sounds_a_good_way(self, bomb_sounds_before:list, bomb_sounds_after:list):
+        # TODO
+        pass
+

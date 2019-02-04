@@ -57,19 +57,36 @@ class AI(RealtimeAI):
             ESoundIntensity.Weak
         ]
 
-        self.g = Graph(self.world.height * self.world.width)
+        self.path = {}
+        self.de_bombs = {}
+
+        '''self.pos_to_index = {}
+        self.index_to_pos = {}
+        self.not_wall_cells = 0
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                if self.world.board[i][j] != ECell.Wall:
+                    print(i, j)
+                    print("--")
+                    self.pos_to_index[(i, j)] = self.not_wall_cells
+                    self.index_to_pos[self.not_wall_cells] = (i, j)
+                    self.not_wall_cells += 1
+        #print(self.not_wall_cells)
+        #print("----------")
+
+        self.g = Graph(self.not_wall_cells)
         for i in range(self.world.height):
             for j in range(self.world.width):
                 if self.world.board[i][j] == ECell.Empty:
-                    if self.world[board][i-1][j] != ECell.Wall:
-                        self.g.add_edge(_index(i, j), _index(i-1, j), 1)
-                    if self.world[board][i+1][j] != ECell.Wall:
-                        self.g.add_edge(_index(i, j), _index(i+1, j), 1)
-                    if self.world[board][i][j-1] != ECell.Wall:
-                        self.g.add_edge(_index(i, j), _index(i, j-1), 1)
-                    if self.world[board][i][j+1] != ECell.Wall:
-                        self.g.add_edge(_index(i, j), _index(i, j+1), 1)
-        self.g.floyd_warshall()
+                    if self.world.board[i-1][j] != ECell.Wall:
+                        self.g.add_edge(self.pos_to_index[(i, j)], self.pos_to_index[(i-1, j)], 1)
+                    if self.world.board[i+1][j] != ECell.Wall:
+                        self.g.add_edge(self.pos_to_index[(i, j)], self.pos_to_index[(i+1, j)], 1)
+                    if self.world.board[i][j-1] != ECell.Wall:
+                        self.g.add_edge(self.pos_to_index[(i, j)], self.pos_to_index[(i, j-1)], 1)
+                    if self.world.board[i][j+1] != ECell.Wall:
+                        self.g.add_edge(self.pos_to_index[(i, j)], self.pos_to_index[(i, j+1)], 1)                    
+        self.g.floyd_warshall()'''
                     
     def decide(self):
         '''Stupid strategy
@@ -104,17 +121,44 @@ class AI(RealtimeAI):
                 if agent.defusion_remaining_time != -1:
                     continue
                 # Second Police Strategy
+                if self.path[agent]:
+                    if self.de_bombs[agent].agent_id != -1:
+                        self.path[agent].clear()
+                        self.de_bombs[agent] = None
+                    else:
+                    # Walk to bomb or defuse it  
+                        if len(self.path[agent]) > 1:
+                            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                        else:
+                            self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                        self.path[agent].pop(0) 
+                # Third Police Strategy
                 elif self.world.bomb:
                     for bomb in self.world.bomb:
+                        if bomb.agent_id != -1:
+                            continue
                         distance = _distance(agent.position, bomb.position)
-                        if distance < self.world.constants.police_vision_distance:
-                            # TODO Check wether bomb is going to explode when police arrives, add to blacklist
-                            # TODO Walk to bomb or defuse it
-                            pass            
+                        if distance <= self.world.constants.police_vision_distance:
+                            # Checking wether bomb is going to explode when police arrives
+                            g = Graph(self.world, (agent.position.x, agent.position.y))
+                            self.path[agent] = g.bfs((bomb.position.x, bomb.position.y))
+                            self.de_bombs[agent] = bomb
+                            if (len(self.path[agent]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
+                                # Walk to bomb or defuse it    
+                                if len(self.path[agent]) > 1:
+                                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                                else:
+                                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                                self.path[agent].pop(0)
+                            else:
+                                self.path[agent].clear()
+                                self.de_bombs[agent] = None
+                                # TODO add to blacklist
         else:
             # Terrorist know about a police position when police is near
             pass
-        # print(self.world.constants.bomb_defusion_time)
+        # print(self.world.constants.bomb_defusion_time)self.queue.append(t)
+                self.pre[t] = self.queue[0] 
         
 
     def plant(self, agent_id, bombsite_direction):
@@ -163,8 +207,11 @@ class AI(RealtimeAI):
     def _agent_print(self, agent_id, text):
         print('Agent[{}]: {}'.format(agent_id, text))
 
-    def _index(self, pos:Position):
-        return pos.x * self.world.height + pos.y
+    def _sub_pos(self, t1:Position, t2:Position):
+        return (t1.x - t2.x, t1.y - t2.y)
+
+    def _index(self, x:int, y:int):
+        return x * self.world.height + y
 
     def _pos(self, index:int):
         return Position(index // self.world.height, index % self.world.height)
@@ -177,7 +224,7 @@ class AI(RealtimeAI):
             before_count = bomb_sounds_before.count(intensity)
             after_count = bomb_sounds_after.count(intensity)
             if before_count != 0 or after_count != 0:
-                return before_count <= after_count:
+                return before_count <= after_count
         return False
         
         

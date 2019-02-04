@@ -13,6 +13,8 @@ from ks.commands import DefuseBomb, PlantBomb, Move, ECommandDirection
 
 from math import *
 
+from graph import Graph
+
 class AI(RealtimeAI):
 
     def __init__(self, world):
@@ -35,6 +37,13 @@ class AI(RealtimeAI):
             ECommandDirection.Left:  (-1, +0),
         }
 
+        self.POS_TO_DIR = {
+            (+0, -1): ECommandDirection.Up,
+            (+1, +0): ECommandDirection.Right,
+            (+0, +1): ECommandDirection.Down,
+            (-1, +0): ECommandDirection.Left
+        }
+
         self.BOMBSITES_ECELL = [
             ECell.SmallBombSite,
             ECell.MediumBombSite,
@@ -48,7 +57,20 @@ class AI(RealtimeAI):
             ESoundIntensity.Weak
         ]
 
-
+        self.g = Graph(self.world.height * self.world.width)
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                if self.world.board[i][j] == ECell.Empty:
+                    if self.world[board][i-1][j] != ECell.Wall:
+                        self.g.add_edge(_index(i, j), _index(i-1, j), 1)
+                    if self.world[board][i+1][j] != ECell.Wall:
+                        self.g.add_edge(_index(i, j), _index(i+1, j), 1)
+                    if self.world[board][i][j-1] != ECell.Wall:
+                        self.g.add_edge(_index(i, j), _index(i, j-1), 1)
+                    if self.world[board][i][j+1] != ECell.Wall:
+                        self.g.add_edge(_index(i, j), _index(i, j+1), 1)
+        self.g.floyd_warshall()
+                    
     def decide(self):
         '''Stupid strategy
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
@@ -140,6 +162,12 @@ class AI(RealtimeAI):
 
     def _agent_print(self, agent_id, text):
         print('Agent[{}]: {}'.format(agent_id, text))
+
+    def _index(self, pos:Position):
+        return pos.x * self.world.height + pos.y
+
+    def _pos(self, index:int):
+        return Position(index // self.world.height, index % self.world.height)
 
     def _distance(self, first:Position, second:Position):
         return abs(first.x - second.x) + abs(first.y - second.y)

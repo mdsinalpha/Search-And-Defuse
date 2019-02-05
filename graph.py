@@ -47,7 +47,7 @@ class Graph:
         self.queue = [source]
         self.pre = {}
     
-    def bfs(destination:tuple):
+    def bfs(self, destination:tuple):
         while self.queue[0] != destination:
             x, y = self.queue[0]
             if(self.world.board[x-1][y] != ECell.Wall):
@@ -73,7 +73,7 @@ class Graph:
             self.queue.pop(0)
         path = []
         it = self.queue[0]
-        while it != source:
+        while it != self.source:
             path.append(it)
             it = self.pre[it]
         path.reverse()

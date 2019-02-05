@@ -69,8 +69,8 @@ class AI(RealtimeAI):
         self.police_bomb_sites = {}
         n, m = len(self.bomb_sites), len(self.world.polices)
         if self.my_side == "Police":
-            index = 0, len_ = ceil(n / m)
-            for police_index in range(len(self.world.polices)-2)
+            index = 0; len_ = ceil(n / m)
+            for police_index in range(len(self.world.polices)-2):
                 self.police_bomb_sites[self.world.polices[police_index]] = self.bomb_sites[index: index+len_]
                 index += len_
             remaining = self.bomb_sites[index:]
@@ -176,7 +176,7 @@ class AI(RealtimeAI):
                 if len(self.path[agent]) > 1:
                     self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
                 else:
-                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(self.de_bombs[agent].position, agent.position)])
                 self.path[agent].pop(0)
                 return True 
         return False
@@ -186,7 +186,7 @@ class AI(RealtimeAI):
             for bomb in self.world.bombs:
                 if bomb.agent_id != -1:
                     continue
-                distance = _distance(agent.position, bomb.position)
+                distance = self._distance(agent.position, bomb.position)
                 if distance <= self.world.constants.police_vision_distance:
                     # Checking wether bomb is going to explode when police arrives
                     g = Graph(self.world, (agent.position.x, agent.position.y))

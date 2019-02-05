@@ -50,22 +50,22 @@ class Graph:
     def bfs(destination:tuple):
         while self.queue[0] != destination:
             x, y = self.queue[0]
-            if(self.world.board[x-1][y] != ECell.Wall)
+            if(self.world.board[x-1][y] != ECell.Wall):
                 t = (x-1, y)
                 if t not in self.pre:
                     self.queue.append(t)
                     self.pre[t] = self.queue[0]
-            if(self.world.board[x+1][y] != ECell.Wall)
+            if(self.world.board[x+1][y] != ECell.Wall):
                 t = (x+1, y)
                 if t not in self.pre:
                     self.queue.append(t)
                     self.pre[t] = self.queue[0]
-            if(self.world.board[x][y-1] != ECell.Wall)
+            if(self.world.board[x][y-1] != ECell.Wall):
                 t = (x, y-1)
                 if t not in self.pre:
                     self.queue.append(t)
                     self.pre[t] = self.queue[0]
-            if(self.world.board[x][y+1] != ECell.Wall)
+            if(self.world.board[x][y+1] != ECell.Wall):
                 t = (x, y+1)
                 if t not in self.pre:
                     self.queue.append(t)

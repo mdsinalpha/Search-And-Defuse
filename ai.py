@@ -60,6 +60,33 @@ class AI(RealtimeAI):
         self.path = {}
         self.de_bombs = {}
 
+        self.bomb_sites = []
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                if self.world.board[i][j] != ECell.Wall and self.world.board[i][j] != ECell.Empty:
+                    self.bomb_sites.append((i ** 2 + j ** 2, i, j))
+        self.bomb_sites.sort()
+        self.police_bomb_sites = {}
+        n, m = len(self.bomb_sites), len(self.world.polices)
+        if self.my_side == "Police":
+            index = 0, len_ = ceil(n / m)
+            for police_index in range(len(self.world.polices)-2)
+                self.police_bomb_sites[self.world.polices[police_index]] = self.bomb_sites[index: index+len_]
+                index += len_
+            remaining = self.bomb_sites[index:]
+            self.police_bomb_sites[len(self.world.polices)-2] = remaining[:len(remaining)//2]
+            self.police_bomb_sites[len(self.world.polices)-1] = remaining[len(remaining)//2+1:]        
+
+        self.path2 = {}
+
+
+        self.police_strategies = [
+            self.first_police_strategy,
+            self.second_police_strategy,
+            self.third_police_strategy,
+            self.fourth_police_strategy
+        ]
+
         '''self.pos_to_index = {}
         self.index_to_pos = {}
         self.not_wall_cells = 0
@@ -114,52 +141,14 @@ class AI(RealtimeAI):
         
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
 
-        if self.my_side == 'Police':
-            for agent in my_agents:
-                # First Police Strategy 
-                # When a police is defusing a bomb, we let him complete his operation:)
-                if agent.defusion_remaining_time != -1:
-                    continue
-                # Second Police Strategy
-                if self.path[agent]:
-                    if self.de_bombs[agent].agent_id != -1:
-                        self.path[agent].clear()
-                        self.de_bombs[agent] = None
-                    else:
-                    # Walk to bomb or defuse it  
-                        if len(self.path[agent]) > 1:
-                            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
-                        else:
-                            self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
-                        self.path[agent].pop(0) 
-                # Third Police Strategy
-                elif self.world.bomb:
-                    for bomb in self.world.bomb:
-                        if bomb.agent_id != -1:
-                            continue
-                        distance = _distance(agent.position, bomb.position)
-                        if distance <= self.world.constants.police_vision_distance:
-                            # Checking wether bomb is going to explode when police arrives
-                            g = Graph(self.world, (agent.position.x, agent.position.y))
-                            self.path[agent] = g.bfs((bomb.position.x, bomb.position.y))
-                            self.de_bombs[agent] = bomb
-                            if (len(self.path[agent]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
-                                # Walk to bomb or defuse it    
-                                if len(self.path[agent]) > 1:
-                                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
-                                else:
-                                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
-                                self.path[agent].pop(0)
-                            else:
-                                self.path[agent].clear()
-                                self.de_bombs[agent] = None
-                                # TODO add to blacklist
-        else:
-            # Terrorist know about a police position when police is near
-            pass
-        # print(self.world.constants.bomb_defusion_time)self.queue.append(t)
-                self.pre[t] = self.queue[0] 
-        
+        for agent in my_agents:
+            if self.my_side == 'Police':
+                for strategy in self.police_strategies:
+                    if strategy(agent):
+                        break
+            else:
+                # Terrorist know about a police position when police is near
+                pass
 
     def plant(self, agent_id, bombsite_direction):
         self.send_command(PlantBomb(id=agent_id, direction=bombsite_direction))
@@ -172,16 +161,66 @@ class AI(RealtimeAI):
     def move(self, agent_id, move_direction):
         self.send_command(Move(id=agent_id, direction=move_direction))
 
+    
+    def first_police_strategy(self, agent:Police):
+        # When a police is defusing a bomb, we let him complete his operation:)
+        return agent.defusion_remaining_time != -1
+    
+    def second_police_strategy(self, agent:Police):
+        if agent in self.path and self.path[agent]:
+            if self.de_bombs[agent].agent_id != -1:
+                self.path[agent].clear()
+                self.de_bombs[agent] = None
+            else:
+                # Walk to bomb or defuse it  
+                if len(self.path[agent]) > 1:
+                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                else:
+                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                self.path[agent].pop(0)
+                return True 
+        return False
+
+    def third_police_strategy(self, agent:Police):
+        if self.world.bombs:
+            for bomb in self.world.bombs:
+                if bomb.agent_id != -1:
+                    continue
+                distance = _distance(agent.position, bomb.position)
+                if distance <= self.world.constants.police_vision_distance:
+                    # Checking wether bomb is going to explode when police arrives
+                    g = Graph(self.world, (agent.position.x, agent.position.y))
+                    self.path[agent] = g.bfs((bomb.position.x, bomb.position.y))
+                    self.de_bombs[agent] = bomb
+                    if (len(self.path[agent]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
+                        # Walk to bomb or defuse it    
+                        if len(self.path[agent]) > 1:
+                            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                        else:
+                            self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                        self.path[agent].pop(0)
+                        return True
+                    else:
+                        self.path[agent].clear()
+                        self.de_bombs[agent] = None
+                        # TODO add to blacklist
+        return False
+
+    def fourth_police_strategy(self, agent:Police):
+        if agent in self.path2 and self.path2[agent]:
+            pass
+        return False
+        
+    def fifth_police_strategy(self, agent:Police):
+        return True
 
     def _empty_directions(self, position):
         empty_directions = []
-
         for direction in self.DIRECTIONS:
             pos = self._sum_pos_tuples((position.x, position.y), self.DIR_TO_POS[direction])
             if self.world.board[pos[1]][pos[0]] == ECell.Empty:
                 empty_directions.append(direction)
         return empty_directions
-
 
     def _find_bombsite_direction(self, agent):
         for direction in self.DIRECTIONS:
@@ -192,17 +231,14 @@ class AI(RealtimeAI):
                     return direction
         return None
 
-
     def _has_bomb(self, position):
         for bomb in self.world.bombs:
             if position[0] == bomb.position.x and position[1] == bomb.position.y:
                 return True
         return False
 
-
     def _sum_pos_tuples(self, t1, t2):
         return (t1[0] + t2[0], t1[1] + t2[1])
-
 
     def _agent_print(self, agent_id, text):
         print('Agent[{}]: {}'.format(agent_id, text))

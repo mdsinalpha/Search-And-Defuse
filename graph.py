@@ -41,40 +41,31 @@ from ks.models import (World, ECell)
 
 class Graph:
 
-    def __init__(self, world:World, source:tuple):
+    def __init__(self, world:World, source:tuple, black_pos:list=[]):
         self.world = world
         self.source = source
+        self.black_pos = black_pos
         self.queue = [source]
         self.pre = {}
     
     def bfs(self, destination:tuple):
-        while self.queue[0] != destination:
+        while self.queue and self.queue[0] != destination:
             x, y = self.queue[0]
-            if(self.world.board[x-1][y] != ECell.Wall):
-                t = (x-1, y)
-                if t not in self.pre:
-                    self.queue.append(t)
-                    self.pre[t] = self.queue[0]
-            if(self.world.board[x+1][y] != ECell.Wall):
-                t = (x+1, y)
-                if t not in self.pre:
-                    self.queue.append(t)
-                    self.pre[t] = self.queue[0]
-            if(self.world.board[x][y-1] != ECell.Wall):
-                t = (x, y-1)
-                if t not in self.pre:
-                    self.queue.append(t)
-                    self.pre[t] = self.queue[0]
-            if(self.world.board[x][y+1] != ECell.Wall):
-                t = (x, y+1)
-                if t not in self.pre:
+            adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
+            for t in adjacent:
+                if self.promising(t):
                     self.queue.append(t)
                     self.pre[t] = self.queue[0]   
             self.queue.pop(0)
         path = []
-        it = self.queue[0]
-        while it != self.source:
-            path.append(it)
-            it = self.pre[it]
+        if self.queue:
+            it = self.queue[0]
+            while it != self.source:
+                path.append(it)
+                it = self.pre[it]
+            path.pop(0)
         path.reverse()
         return path
+    
+    def promising(self, t:tuple):
+        return self.world.board[t[0]][t[1]] == ECell.Empty and t not in self.black_pos and t not in self.pre

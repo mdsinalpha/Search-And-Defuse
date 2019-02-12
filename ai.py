@@ -57,41 +57,53 @@ class AI(RealtimeAI):
             ESoundIntensity.Weak
         ]
 
-        self.path = {}
-        self.de_bombs = {}
-
-        self.bomb_sites = []
-        for i in range(self.world.height):
-            for j in range(self.world.width):
-                if self.world.board[i][j] in self.BOMBSITES_ECELL:
-                    self.bomb_sites.append((i ** 2 + j ** 2, i, j))
-        self.bomb_sites.sort()
-
-        #print(self.bomb_sites)
-
-        self.police_bomb_sites = {}
-        n, m = len(self.bomb_sites), len(self.world.polices)
         if self.my_side == "Police":
+            # Path to be followed for defusing a bomb:
+            self.path = {}
+            self.de_bombs = {}
+
+            # Sorting all bomb site places:
+            self.bomb_sites = []
+            for i in range(self.world.height):
+                for j in range(self.world.width):
+                    if self.world.board[i][j] in self.BOMBSITES_ECELL:
+                        self.bomb_sites.append((i ** 2 + j ** 2, i, j))
+            self.bomb_sites.sort()
+
+            print("All map bomb sites:")
+            print(self.bomb_sites)
+
+            # Allocating bomb sites to polices:
+            self.police_bomb_sites = {}
+            n, m = len(self.bomb_sites), len(self.world.polices)
             index, len_ = 0, ceil(n / m)
             for police_index in range(len(self.world.polices)-2):
                 self.police_bomb_sites[self.world.polices[police_index].id] = self.bomb_sites[index: index+len_]
                 index += len_
             remaining = self.bomb_sites[index:]
             self.police_bomb_sites[self.world.polices[len(self.world.polices)-2].id] = remaining[:len(remaining)//2]
-            self.police_bomb_sites[self.world.polices[len(self.world.polices)-1].id] = remaining[len(remaining)//2+1:]        
+            self.police_bomb_sites[self.world.polices[len(self.world.polices)-1].id] = remaining[len(remaining)//2:]        
 
-        # print(self.police_bomb_sites)
+            print("Map bomb site to polices allocation:")
+            print(self.police_bomb_sites)
 
-        self.path2 = {}
-        self.current_bomb_sound_list = ["mute"] 
+            # Path to be followed for circulating between bomb sites:
+            self.path2 = {}
+            self.current_bomb_sound_list = {}
 
-        self.police_strategies = [
-            self.first_police_strategy,
-            self.second_police_strategy,
-            self.third_police_strategy,
-            self.fourth_police_strategy,
-            self.fifth_police_strategy
-        ]
+            self.police_strategies = [
+                self.first_police_strategy,
+                self.second_police_strategy,
+                self.third_police_strategy,
+                self.fourth_police_strategy,
+                self.fifth_police_strategy
+            ]
+
+            '''# Test graph bfs:
+            print("* ---------- ---------- ---------- *")
+            g = Graph(self.world, (10, 17))
+            print(g.bfs((2, 21)))
+            print("* ---------- ---------- ---------- *")'''
 
         '''self.pos_to_index = {}
         self.index_to_pos = {}
@@ -146,10 +158,11 @@ class AI(RealtimeAI):
                     self.plant(agent.id, bombsite_direction)'''
         
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
-
+        
         for agent in my_agents:
-            if agent.status == EAgentStatus.Dead:
+            if agent.status is EAgentStatus.Dead:
                 continue
+            print("Agent %d position (%d, %d)" %(agent.id, agent.position.y, agent.position.x))
             if self.my_side == 'Police':
                 for strategy in self.police_strategies:
                     if strategy(agent):
@@ -175,18 +188,22 @@ class AI(RealtimeAI):
         return agent.defusion_remaining_time != -1
     
     def second_police_strategy(self, agent:Police):
-        if agent in self.path and self.path[agent]:
-            if self.de_bombs[agent].agent_id != -1:
-                self.path[agent].clear()
-                self.de_bombs[agent] = None
+        if agent.id in self.path and self.path[agent.id]:
+            if self.de_bombs[agent.id].agent_id != -1:
+                self.path[agent.id].clear()
+                self.de_bombs[agent.id] = None
             else:
                 # Walk to bomb or defuse it  
-                if len(self.path[agent]) > 1:
-                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                if len(self.path[agent.id]) > 1:
+                    try:
+                        self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent.id][0][1], self.path[agent.id][0][0]), agent.position)])
+                    except KeyError as e:
+                        self.path[agent.id].clear()
+                        self.de_bombs[agent.id] = None
+                        return False
                 else:
-                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(self.de_bombs[agent].position, agent.position)])
-                self.path[agent].pop(0)
-                self.current_bomb_sound_list = ["mute"]
+                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(self.de_bombs[agent.id].position, agent.position)])
+                self.path[agent.id].pop(0)
                 return True 
         return False
 
@@ -198,52 +215,60 @@ class AI(RealtimeAI):
                 distance = self._distance(agent.position, bomb.position)
                 if distance <= self.world.constants.police_vision_distance:
                     # Checking wether bomb is going to explode when police arrives
-                    g = Graph(self.world, (agent.position.x, agent.position.y))
-                    self.path[agent] = g.bfs((bomb.position.x, bomb.position.y))
-                    self.de_bombs[agent] = bomb
-                    if (len(self.path[agent]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
+                    g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+                    self.path[agent.id] = g.bfs((bomb.position.y, bomb.position.x))
+                    self.de_bombs[agent.id] = bomb
+                    if self.path[agent.id] and ((len(self.path[agent.id]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time):
                         # Walk to bomb or defuse it    
-                        if len(self.path[agent]) > 1:
-                            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent][0][0], self.path[agent][0][1]), agent.position)])
+                        if len(self.path[agent.id]) > 1:
+                            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent.id][0][1], self.path[agent.id][0][0]), agent.position)])
                         else:
                             self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
-                        self.path[agent].pop(0)
-                        self.current_bomb_sound_list = ["mute"]
+                        self.path[agent.id].pop(0)
+                        self.path2[agent.id].clear()
                         return True
                     else:
-                        self.path[agent].clear()
-                        self.de_bombs[agent] = None
+                        self.path[agent.id].clear()
+                        self.de_bombs[agent.id] = None
                         # TODO add to blacklist
         return False
 
     def fourth_police_strategy(self, agent:Police):
-        if "mute" not in self.current_bomb_sound_list and agent in self.path2 and self.path2[agent]:
-            if self._sounds_a_good_way(self.current_bomb_sound_list, agent.bomb_sounds):
-                self.current_bomb_sound_list = agent.bomb_sounds
-                self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path2[agent][0][0], self.path2[agent][0][1]), agent.position)])
-                self.path2[agent].pop(0)
-                return True
-            else:
-                self.police_bomb_sites[agent.id].append(self.police_bomb_sites[agent.id].pop(0))
+        # Let's continue the path2:
+        if agent.id in self.path2 and self.path2[agent.id]:
+            if agent.id in self.current_bomb_sound_list:
+                print("Agent %d is hearing: " %(agent.id), end='')
+                print(self.current_bomb_sound_list[agent.id], " --> ", agent.bomb_sounds)
+            if self._sounds_a_good_way(self.current_bomb_sound_list[agent.id], agent.bomb_sounds):
+                self.current_bomb_sound_list[agent.id] = agent.bomb_sounds
+                print("Agent %d is moving to (%d, %d)" %(agent.id, self.path2[agent.id][0][1], self.path2[agent.id][0][0]))
+                try:
+                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path2[agent.id][0][1], self.path2[agent.id][0][0]), agent.position)])
+                    self.path2[agent.id].pop(0)
+                    return True
+                except KeyError as e:
+                    self.path2[agent.id].clear()
         return False
         
     def fifth_police_strategy(self, agent:Police):
-        self.current_bomb_sound_list = agent.bomb_sounds
-        g = Graph(self.world, (agent.position.x, agent.position.y))
-        if self.police_bomb_sites[agent.id]:
-            dest = self.police_bomb_sites[agent.id][0]
-            # print(agent.id)
-            # print(agent.position.x, agent.position.y)
-            # print(dest)
-            self.path2[agent] = g.bfs((dest[1], dest[2]))
-            # print(self.path2[agent])
-            # print("----------")
-            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path2[agent][0][0], self.path2[agent][0][1]), agent.position)])
-            self.path2[agent].pop(0)
-        else:
-            self.move(agent.id, random.choice(self._empty_directions(agent.position)))
-        return True
-
+        # Let's find a path from agent's position to one of its bomb sites:
+        print("Changing agent %d bomb site: (%d, %d) --> " %(agent.id ,self.police_bomb_sites[agent.id][0][1], self.police_bomb_sites[agent.id][0][2]), end='')
+        self.police_bomb_sites[agent.id].append(self.police_bomb_sites[agent.id].pop(0))
+        print("(%d, %d)" %(self.police_bomb_sites[agent.id][0][1], self.police_bomb_sites[agent.id][0][2]))
+        self.current_bomb_sound_list[agent.id] = agent.bomb_sounds
+        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+        dest = self.police_bomb_sites[agent.id][0]
+        print("Source : ", agent.position.y, agent.position.x)
+        print("Destination : ", dest[1], dest[2])
+        self.path2[agent.id] = g.bfs((dest[1], dest[2]))
+        print(self.path2[agent.id])
+        print("----------")
+        if self.path2[agent.id]:
+            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path2[agent.id][0][1], self.path2[agent.id][0][0]), agent.position)])
+            self.path2[agent.id].pop(0)
+            return True
+        return False
+    
     def _empty_directions(self, position):
         empty_directions = []
         for direction in self.DIRECTIONS:
@@ -286,12 +311,22 @@ class AI(RealtimeAI):
         return abs(first.x - second.x) + abs(first.y - second.y)
 
     def _sounds_a_good_way(self, bomb_sounds_before:list, bomb_sounds_after:list):
+        if len(bomb_sounds_before) == 0 and len(bomb_sounds_after) == 0:
+            return True
         for intensity in self.ESOUND_INTENSITIES:
             before_count = bomb_sounds_before.count(intensity)
             after_count = bomb_sounds_after.count(intensity)
             if before_count != 0 or after_count != 0:
                 return before_count <= after_count
         return False
-        
+    
+    def _calculate_black_pos(self):
+        black_pos = []
+        my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
+        for agent in my_agents:
+            if agent.status is not EAgentStatus.Dead:
+                black_pos.append((agent.position.y, agent.position.x))
+        return black_pos
+
         
 

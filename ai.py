@@ -98,6 +98,11 @@ class AI(RealtimeAI):
                 self.fourth_police_strategy,
                 self.fifth_police_strategy
             ]
+        
+        else:
+            self.terrorist_strategies = [
+                self.first_terrorist_strategy
+            ] 
 
             '''# Test graph bfs:
             print("* ---------- ---------- ---------- *")
@@ -168,9 +173,11 @@ class AI(RealtimeAI):
                     if strategy(agent):
                         break
             else:
-                # Terrorist know about a police position when police is near
-                pass
-
+                for strategy in self.terrorist_strategies:
+                    if strategy(agent):
+                        break
+        
+    
     def plant(self, agent_id, bombsite_direction):
         self.send_command(PlantBomb(id=agent_id, direction=bombsite_direction))
 
@@ -269,6 +276,9 @@ class AI(RealtimeAI):
             return True
         return False
     
+    def first_terrorist_strategy(self, agent:Terrorist):
+        pass
+
     def _empty_directions(self, position):
         empty_directions = []
         for direction in self.DIRECTIONS:

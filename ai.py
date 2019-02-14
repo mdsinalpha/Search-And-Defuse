@@ -61,7 +61,7 @@ class AI(RealtimeAI):
 
             # Path to be followed for defusing a bomb:
             self.path = {}
-            self.de_bombs = {}
+            self.police_bomb_site = {}
 
             # Sorting all bomb site places:
             self.bomb_sites = []
@@ -104,6 +104,7 @@ class AI(RealtimeAI):
 
             # Path to be followed for planting a bomb:
             self.path = {}
+            self.terrorist_bomb_site = {}
 
             # Making free bombsites list:
             self.free_bomb_sites = []
@@ -114,9 +115,6 @@ class AI(RealtimeAI):
             
             print("All map bomb sites:")
             print(self.free_bomb_sites)
-
-            # To allocate nearest free bomb site to a terrorist:
-            self.terrorist_bomb_site = {}
 
             self.terrorist_strategies = [
                 self.first_terrorist_strategy,
@@ -182,6 +180,14 @@ class AI(RealtimeAI):
                     self.defuse(agent.id, bombsite_direction)
                 else:
                     self.plant(agent.id, bombsite_direction)'''
+
+        if self.my_side == "Terrorist":
+            # Updating free bomb sites:
+            for i in range(self.world.height):
+                for j in range(self.world.width):
+                    if self.world.board[i][j] in self.BOMBSITES_ECELL and (i, j) not in self.free_bomb_sites and not self._has_bomb((i, j)):
+                        print("Bombsite (%d, %d) freed." %(i, j))
+                        self.free_bomb_sites.append((i, j))
         
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
         
@@ -216,23 +222,19 @@ class AI(RealtimeAI):
         return agent.defusion_remaining_time != -1
     
     def second_police_strategy(self, agent:Police):
-        if agent.id in self.path and self.path[agent.id]:
-            if self.de_bombs[agent.id].agent_id != -1:
-                self.path[agent.id].clear()
-                self.de_bombs[agent.id] = None
+        if agent.id in self.path:
+            # Walk to bomb or defuse it  
+            if self.path[agent.id]:
+                try:
+                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent.id][0][1], self.path[agent.id][0][0]), agent.position)])
+                    self.path[agent.id].pop(0)
+                except KeyError as e:
+                    del self.path[agent.id]
+                    return False
             else:
-                # Walk to bomb or defuse it  
-                if len(self.path[agent.id]) > 1:
-                    try:
-                        self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent.id][0][1], self.path[agent.id][0][0]), agent.position)])
-                    except KeyError as e:
-                        self.path[agent.id].clear()
-                        self.de_bombs[agent.id] = None
-                        return False
-                else:
-                    self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(self.de_bombs[agent.id].position, agent.position)])
-                self.path[agent.id].pop(0)
-                return True 
+                self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(self.police_bomb_site[agent.id], agent.position)])
+                del self.path[agent.id]
+            return True 
         return False
 
     def third_police_strategy(self, agent:Police):
@@ -245,19 +247,23 @@ class AI(RealtimeAI):
                     # Checking wether bomb is going to explode when police arrives
                     g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
                     self.path[agent.id] = g.bfs((bomb.position.y, bomb.position.x))
-                    self.de_bombs[agent.id] = bomb
-                    if self.path[agent.id] and ((len(self.path[agent.id]) - 1) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time):
+                    self.police_bomb_site[agent.id] = bomb.position
+                    if len(self.path[agent.id]) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
+                        res = True
                         # Walk to bomb or defuse it    
-                        if len(self.path[agent.id]) > 1:
+                        if self.path[agent.id]:
                             self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(self.path[agent.id][0][1], self.path[agent.id][0][0]), agent.position)])
+                            self.path[agent.id].pop(0)
                         else:
-                            self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
-                        self.path[agent.id].pop(0)
+                            try:
+                                self.defuse(agent.id, self.POS_TO_DIR[self._sub_pos(bomb.position, agent.position)])
+                            except KeyError as e:
+                                res = False
+                            del self.path[agent.id]
                         self.path2[agent.id].clear()
-                        return True
+                        return res
                     else:
-                        self.path[agent.id].clear()
-                        self.de_bombs[agent.id] = None
+                        del self.path[agent.id]
                         # TODO add to blacklist
         return False
 
@@ -331,6 +337,7 @@ class AI(RealtimeAI):
                     dest = self.terrorist_bomb_site[agent.id]
                     self.plant(agent.id, self.POS_TO_DIR[self._sub_pos(Position(dest[1], dest[0]), agent.position)])
                     print("Agent %d is planting a bomb!" %agent.id)
+                    del self.terrorist_bomb_site[agent.id]
                     del self.path[agent.id]
                 except KeyError as e:
                     del self.path[agent.id]
@@ -369,6 +376,7 @@ class AI(RealtimeAI):
             try:
                 # Hey terrorist, you are adjacent to a bombsite... Hurry up and plant!
                 self.plant(agent.id, self.POS_TO_DIR[self._sub_pos(Position(dest[1], dest[0]), agent.position)])
+                del self.terrorist_bomb_site[agent.id]
             except KeyError as e:
                 # Your way is closed:) please wait.
                 return False
@@ -394,7 +402,7 @@ class AI(RealtimeAI):
 
     def _has_bomb(self, position):
         for bomb in self.world.bombs:
-            if position[0] == bomb.position.x and position[1] == bomb.position.y:
+            if position[1] == bomb.position.x and position[0] == bomb.position.y:
                 return True
         return False
 

@@ -58,6 +58,7 @@ class AI(RealtimeAI):
         ]
 
         if self.my_side == "Police":
+
             # Path to be followed for defusing a bomb:
             self.path = {}
             self.de_bombs = {}
@@ -100,8 +101,28 @@ class AI(RealtimeAI):
             ]
         
         else:
+
+            # Path to be followed for planting a bomb:
+            self.path = {}
+
+            # Making free bombsites list:
+            self.free_bomb_sites = []
+            for i in range(self.world.height):
+                for j in range(self.world.width):
+                    if self.world.board[i][j] in self.BOMBSITES_ECELL:
+                        self.free_bomb_sites.append((i, j))
+            
+            print("All map bomb sites:")
+            print(self.free_bomb_sites)
+
+            # To allocate nearest free bomb site to a terrorist:
+            self.terrorist_bomb_site = {}
+
             self.terrorist_strategies = [
-                self.first_terrorist_strategy
+                self.first_terrorist_strategy,
+                self.second_terrorist_strategy,
+                self.third_terrorist_strategy,
+                self.fourth_terrorist_strategy
             ] 
 
             '''# Test graph bfs:
@@ -217,7 +238,7 @@ class AI(RealtimeAI):
     def third_police_strategy(self, agent:Police):
         if self.world.bombs:
             for bomb in self.world.bombs:
-                if bomb.agent_id != -1:
+                if bomb.defuser_id != -1:
                     continue
                 distance = self._distance(agent.position, bomb.position)
                 if distance <= self.world.constants.police_vision_distance:
@@ -277,8 +298,83 @@ class AI(RealtimeAI):
         return False
     
     def first_terrorist_strategy(self, agent:Terrorist):
-        pass
+        # If there's a police near, change direction and run(watch out for police inside path)
+        black_polices_pos = []
+        for police in self.world.polices:
+            if self._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
+                black_polices_pos.append((police.position.y, police.position.x))
+        if black_polices_pos:
+            if agent.id in self.path:
+                del self.path[agent.id]
+            return self.fourth_terrorist_strategy(agent, black_polices_pos)
+        return False
 
+    def second_terrorist_strategy(self, agent:Terrorist):
+        # When a terrorist is planting a bomb and there is no police anroud, we let him complete his operation:)
+        return agent.planting_remaining_time != -1
+    
+    def third_terrorist_strategy(self, agent:Terrorist):
+        # Continue to your path or plant a bomb
+        if agent.id in self.path:
+            if self.path[agent.id]:
+                try:
+                    path = self.path[agent.id]
+                    self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(path[0][1], path[0][0]), agent.position)])
+                    print("Agent %d is moving: (%d, %d) --> (%d, %d)" %(agent.id, agent.position.y, agent.position.x, path[0][0], path[0][1]))
+                    path.pop(0)
+                except KeyError as e:
+                    del self.path[agent.id]
+                    return False    
+            else:
+                try:
+                    # Hey terrorist, you are adjacent to a bombsite... Hurry up and plant!
+                    dest = self.terrorist_bomb_site[agent.id]
+                    self.plant(agent.id, self.POS_TO_DIR[self._sub_pos(Position(dest[1], dest[0]), agent.position)])
+                    print("Agent %d is planting a bomb!" %agent.id)
+                    del self.path[agent.id]
+                except KeyError as e:
+                    del self.path[agent.id]
+                    return False
+            return True
+        return False
+    
+    def fourth_terrorist_strategy(self, agent:Terrorist, black_polices_pos=[]):
+
+        if agent.id in self.terrorist_bomb_site:
+            dest = self.terrorist_bomb_site[agent.id]
+        else:
+            # Let's find a path to nearest free bomb site for this misreable terrorist:
+            bombsite_index, min_distance = -1, float("inf")
+            for index, bombsite in enumerate(self.free_bomb_sites):
+                distance = self._distance(agent.position, Position(bombsite[1], bombsite[0]))
+                if distance < min_distance:
+                    bombsite_index, min_distance = index, distance
+            if bombsite_index != -1:
+                # There exists a bombsite!
+                dest = self.free_bomb_sites[bombsite_index]
+                print("Terrorist with id %d wants bombsite (%d, %d)" %(agent.id, dest[0], dest[1]))
+                self.terrorist_bomb_site[agent.id] = dest
+                self.free_bomb_sites.pop(bombsite_index)
+    
+        black_pos = self._calculate_black_pos()
+        black_pos.extend(black_polices_pos)
+        g = Graph(self.world, (agent.position.y, agent.position.x), black_pos)
+        path = g.bfs(dest)
+        if path:
+            # Move!
+            self.move(agent.id, self.POS_TO_DIR[self._sub_pos(Position(path[0][1], path[0][0]), agent.position)])
+            path.pop(0)    
+            self.path[agent.id] = path
+        else:
+            try:
+                # Hey terrorist, you are adjacent to a bombsite... Hurry up and plant!
+                self.plant(agent.id, self.POS_TO_DIR[self._sub_pos(Position(dest[1], dest[0]), agent.position)])
+            except KeyError as e:
+                # Your way is closed:) please wait.
+                return False
+            return True
+        return False
+    
     def _empty_directions(self, position):
         empty_directions = []
         for direction in self.DIRECTIONS:

@@ -7,13 +7,11 @@ class Sound:
         self.sound_board = [[[] for j in range(world.width)] for i in range(world.height)]
         self.bomb_sites = bomb_sites
         self.X, self.Y, self.Z = tuple(world.constants.sound_ranges.values())
-        # print(self.X)
-        # print(self.Y)
-        # print(self.Z)
-        
+        # print(self.X, self.Y, self.Z)        
     
     def fill(self):
         for bombsite in self.bomb_sites:
+            # Extracting each bombsite's sounds:
             self._bfs(bombsite)
         return self.sound_board
     
@@ -27,11 +25,11 @@ class Sound:
                 for t in adjacent:
                     if t[0]>=0 and t[0]<self.world.height and t[1]>=0 and t[1]<self.world.width and t not in visited:
                         if cnt <= self.X:
-                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Strong, t[0], t[1]))
+                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Strong, bombsite[0], bombsite[1]))
                         elif cnt <= self.Y:
-                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Normal, t[0], t[1]))
+                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Normal, bombsite[0], bombsite[1]))
                         elif cnt <= self.Z:
-                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Weak, t[0], t[1]))
+                            self.sound_board[t[0]][t[1]].append((ESoundIntensity.Weak, bombsite[0], bombsite[1]))
                         visited.append(t)
                         frontier.append(t)
             queue = frontier

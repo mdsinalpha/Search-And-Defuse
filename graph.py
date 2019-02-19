@@ -48,7 +48,7 @@ class Graph:
         self.queue = [source]
         self.pre = {source:None}
     
-    def bfs(self, destination:tuple):
+    def bfs(self, destination:tuple, pop_destination=True):
         while self.queue and self.queue[0] != destination:
             x, y = self.queue[0]
             adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
@@ -64,7 +64,8 @@ class Graph:
             while it != self.source:
                 path.append(it)
                 it = self.pre[it]
-            path.pop(0)
+            if pop_destination:
+                path.pop(0)
         path.reverse()
         return path
     

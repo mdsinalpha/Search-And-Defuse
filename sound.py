@@ -13,6 +13,16 @@ class Sound:
         for bombsite in self.bomb_sites:
             # Extracting each bombsite's sounds:
             self._bfs(bombsite)
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                l, new = self.sound_board[i][j], []
+                for sound in [ESoundIntensity.Weak, ESoundIntensity.Normal, ESoundIntensity.Strong]:
+                    # Duplicate sounds are useless...
+                    if  [t[0] for t in l].count(sound) == 1:
+                        for item in l:
+                            if item[0] == sound:
+                                new.append(item)
+                self.sound_board[i][j] = new
         return self.sound_board
     
     def _bfs(self, bombsite:tuple):
@@ -23,7 +33,7 @@ class Sound:
                 x, y = node
                 adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
                 for t in adjacent:
-                    if t[0]>=0 and t[0]<self.world.height and t[1]>=0 and t[1]<self.world.width and t not in visited:
+                    if self.world.board[t[0]][t[1]] == ECell.Empty and t not in visited:
                         if cnt <= self.X:
                             self.sound_board[t[0]][t[1]].append((ESoundIntensity.Strong, bombsite[0], bombsite[1]))
                         elif cnt <= self.Y:

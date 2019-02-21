@@ -586,7 +586,11 @@ class AI(RealtimeAI):
                    elif ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
             if selected_direction:
-                self.waiting_counter[agent.id] = 2
+                if agent.id in self.terrorist_bomb_site:
+                    del self.terrorist_bomb_site[agent.id]
+                if agent.id in self.path:
+                    del self.path[agent.id]
+                self.waiting_counter[agent.id] = 1
                 self.move(agent.id, selected_direction)
                 return True
         return False
@@ -630,7 +634,7 @@ class AI(RealtimeAI):
             # Let's find a path to nearest free bomb site for this lucky terrorist:
             bombsite_index, min_distance = -1, float("inf")
             for index, bombsite in enumerate(self.free_bomb_sites):
-                distance = self._distance(agent.position, Position(bombsite[1], bombsite[0]))
+                distance = len(Graph(self.world, (agent.position.y, agent.position.x)).bfs(bombsite))
                 if distance < min_distance:
                     bombsite_index, min_distance = index, distance
             if bombsite_index != -1:

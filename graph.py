@@ -1,3 +1,41 @@
+'''class Graph:
+
+    def __init__(self, v:int):
+        self.v = v
+        self.floyd = [[float("inf") for j in range(v)] for i in range(v)]
+        self.pre = [[-1 for j in range(self.v)] for i in range(self.v)]
+
+    def add_edge(self, findex:int, sindex:int, value):
+        self.floyd[findex][sindex] = value
+    
+    def floyd_warshall(self):
+        for k in range(self.v):
+            for i in range(self.v):
+                for j in range(self.v):
+                    if(self.floyd[i][k]+self.floyd[k][j]<self.floyd[i][j]):
+                        self.floyd[i][j] = self.floyd[i][k] + self.floyd[k][j]
+                        self.pre[i][j] = k
+        #print(self.v)
+        #print(self.floyd)
+        #print("----------")
+        #print(self.pre)
+        #print("----------")
+    
+    def sp(self, findex:int, sindex:int):
+        return self.floyd[findex][sindex]
+    
+    def path(self, findex:int, sindex:int):
+        self.path_list = []
+        self._path(findex, sindex)
+        return self.path_list
+
+    def _path(self, findex:int, sindex:int):
+        k = self.pre[findex][sindex]
+        if k != -1:
+            self._path(findex, k)
+            self.path_list.append(k)
+            self._path(k, sindex)
+'''
 from ks.models import (World, ECell)
 
 class Graph:

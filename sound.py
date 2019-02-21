@@ -33,7 +33,7 @@ class Sound:
                 x, y = node
                 adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
                 for t in adjacent:
-                    if self.world.board[t[0]][t[1]] == ECell.Empty and t not in visited:
+                    if self.world.board[t[0]][t[1]] != ECell.Wall and t not in visited:
                         if cnt <= self.X:
                             self.sound_board[t[0]][t[1]].append((ESoundIntensity.Strong, bombsite[0], bombsite[1]))
                         elif cnt <= self.Y:

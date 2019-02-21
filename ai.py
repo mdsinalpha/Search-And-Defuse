@@ -312,7 +312,7 @@ class AI(RealtimeAI):
             # Updating free bomb sites:
             for i in range(self.world.height):
                 for j in range(self.world.width):
-                    if self.world.board[i][j] in self.BOMBSITES_ECELL and (i, j) not in self.free_bomb_sites and not self._has_bomb((i, j)):
+                    if self.world.board[i][j] in self.BOMBSITES_ECELL and (i, j) not in self.free_bomb_sites and (i, j) not in self.terrorist_bomb_site.values() and not self._has_bomb((i, j)):
                         print("Bombsite (%d, %d) freed." %(i, j))
                         self.free_bomb_sites.append((i, j))
 
@@ -586,7 +586,7 @@ class AI(RealtimeAI):
                    elif ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
             if selected_direction:
-                self.waiting_counter[agent.id] = 1
+                self.waiting_counter[agent.id] = 2
                 self.move(agent.id, selected_direction)
                 return True
         return False
@@ -639,21 +639,23 @@ class AI(RealtimeAI):
                 print("Terrorist with id %d wants bombsite (%d, %d)." %(agent.id, dest[0], dest[1]))
                 self.terrorist_bomb_site[agent.id] = dest
                 self.free_bomb_sites.pop(bombsite_index)
-    
-        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
-        path = g.bfs(dest)
-        if path:
-            # Move!
-            if self._move(agent.id, Position(path[0][1], path[0][0]), agent.position):
-                path.pop(0)    
-                self.path[agent.id] = path
-                return True
-        else:
-            # Hey terrorist, you are adjacent to a bombsite... Hurry up and plant!
-            del self.terrorist_bomb_site[agent.id]
-            if self._plant(agent.id, Position(dest[1], dest[0]), agent.position):
-                return True
-            # Your way is closed:) please wait.
+            else:
+                dest = None
+        if dest:
+            g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+            path = g.bfs(dest)
+            if path:
+                # Move!
+                if self._move(agent.id, Position(path[0][1], path[0][0]), agent.position):
+                    path.pop(0)    
+                    self.path[agent.id] = path
+                    return True
+            else:
+                # Hey terrorist, you are adjacent to a bombsite... Hurry up and plant!
+                del self.terrorist_bomb_site[agent.id]
+                if self._plant(agent.id, Position(dest[1], dest[0]), agent.position):
+                    return True
+                # Your way is closed:) please wait.
         return False
     
     def _empty_directions(self, position):

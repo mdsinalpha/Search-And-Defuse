@@ -70,7 +70,7 @@ class AI(RealtimeAI):
             tmp_bomb_sites = []
             for i in range(self.world.height):
                 for j in range(self.world.width):
-                    if self.world.board[i][j] in self.BOMBSITES_ECELL:
+                    if self.world.board[i][j] in self.BOMBSITES_ECELL and self._valid_bombsite((i, j)):
                         self.bomb_sites.append((i+j, i, j))
                         tmp_bomb_sites.append((i+j, i, j))
             self.bomb_sites.sort()
@@ -381,8 +381,9 @@ class AI(RealtimeAI):
                     return False
             else:
                 bomb = self.police_bomb_site[agent.id]
-                if self._defuse(agent.id, Position(bomb[1], bomb[0]), agent.position):
-                    del self.path[agent.id]
+                del self.path[agent.id]
+                if not self._defuse(agent.id, Position(bomb[1], bomb[0]), agent.position):
+                    return False
             return True
         return False
 
@@ -399,6 +400,10 @@ class AI(RealtimeAI):
                     path = g.bfs((bomb.position.y, bomb.position.x))
                     if path is None:
                         return False
+                    if agent.id in self.path2:
+                        del self.path2[agent.id] 
+                    if agent.id in self.path3:
+                        del self.path3[agent.id]
                     self.police_bomb_site[agent.id] = (bomb.position.y, bomb.position.x)
                     self.path[agent.id] = path
                     if len(self.path[agent.id]) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
@@ -408,17 +413,13 @@ class AI(RealtimeAI):
                                 self.path[agent.id].pop(0)
                             else:
                                 del self.path[agent.id]
-                                return False
                         else:
                             if self._defuse(agent.id, bomb.position, agent.position):
                                 del self.path[agent.id]
-                        if agent.id in self.path2:
-                            del self.path2[agent.id] 
-                        if agent.id in self.path3:
-                            del self.path3[agent.id]
-                        return True
                     else:
                         del self.path[agent.id]
+                    # Wether police can defuse the bomb or not True can keep the police safe(hold for some cycles) from a path2 leading to the bomb!
+                    return True
         return False
     
     def fourth_police_strategy(self, agent:Police):
@@ -741,6 +742,15 @@ class AI(RealtimeAI):
                 min_point = point
                 min_value = distance
         return min_point
+
+    def _valid_bombsite(self, pos:tuple):
+        res = False
+        for police in self.world.polices:
+            path = Graph(self.world, (police.position.y, police.position.x)).bfs(pos)
+            if path:
+                res = True
+                break
+        return res
 
         
 

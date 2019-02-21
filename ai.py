@@ -634,7 +634,8 @@ class AI(RealtimeAI):
             # Let's find a path to nearest free bomb site for this lucky terrorist:
             bombsite_index, min_distance = -1, float("inf")
             for index, bombsite in enumerate(self.free_bomb_sites):
-                distance = len(Graph(self.world, (agent.position.y, agent.position.x)).bfs(bombsite))
+                path = Graph(self.world, (agent.position.y, agent.position.x)).bfs(bombsite)
+                distance = float("inf") if path is None else len(path)
                 if distance < min_distance:
                     bombsite_index, min_distance = index, distance
             if bombsite_index != -1:

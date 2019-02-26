@@ -6,8 +6,7 @@ class Sound:
         self.world = world
         self.sound_board = [[[] for j in range(world.width)] for i in range(world.height)]
         self.bomb_sites = bomb_sites
-        self.X, self.Y, self.Z = tuple(world.constants.sound_ranges.values())
-        # print(self.X, self.Y, self.Z)        
+        self.X, self.Y, self.Z = tuple(world.constants.sound_ranges.values())     
     
     def fill(self):
         for bombsite in self.bomb_sites:

@@ -66,113 +66,11 @@ class AI(RealtimeAI):
 
         if self.my_side == "Police":
 
-            # Path to be followed for defusing a bomb:
-            self.path = {}
-            self.police_bomb_site = {}
-
-            # Sorting all bomb site places:
-            self.bomb_sites = []
-            tmp_bomb_sites = []
-            for i in range(self.world.height):
-                for j in range(self.world.width):
-                    if self.world.board[i][j] in self.BOMBSITES_ECELL and self._valid_bombsite((i, j)):
-                        self.bomb_sites.append((i+j, i, j))
-                        tmp_bomb_sites.append((i+j, i, j))
-            self.bomb_sites.sort()
-            tmp_bomb_sites.sort()
-            
-            self.print("All map bomb sites:")
-            self.print(self.bomb_sites)
-
-            # Allocating bomb sites to polices:
-            self.police_bomb_sites = {}
-            P, B = len(self.world.polices), len(tmp_bomb_sites)
+            self.police_status = {}
             for police in self.world.polices:
-                allocation_len = B//P if B%P==0 else B//P +1 if police.id < B%P else B//P
-                allocation_list = [tmp_bomb_sites[-1]]
-                choice_list = [(AI._mdistance(t, allocation_list[0]), t[1], t[2]) for t in tmp_bomb_sites]
-                choice_list.sort()
-                allocation_list = choice_list[:allocation_len]
-                for bombsite in allocation_list:
-                    tmp_bomb_sites.remove((bombsite[1]+bombsite[2], bombsite[1], bombsite[2]))
-                self.police_bomb_sites[police.id] = allocation_list
-    
-            self.print("Map bomb site to polices allocation:")
-            self.print(self.police_bomb_sites)
-     
-            # Sound board to determine what sounds could be heared from an specified cell
-            self.sound_board = Sound(self.world, [(site[1], site[2]) for site in self.bomb_sites]).fill()
-            self.print("Sound board: ")
-            for i in range(self.world.height):
-                for j in range(self.world.width):
-                    l = self.sound_board[i][j]
-                    a, b, c, site_pos = 0, 0, 0, [None, None, None]
-                    for sound in l:
-                        if sound[0] == ESoundIntensity.Strong:
-                            a += 1
-                            site_pos[0] = sound[1], sound[2]
-                        elif sound[0] == ESoundIntensity.Normal:
-                            b += 1
-                            site_pos[1] = sound[1], sound[2]
-                        else:
-                            c += 1
-                            site_pos[2] = sound[1], sound[2]
-                    value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
-                    self.print("%03d" %(value) if self.world.board[i][j] == ECell.Empty else "---", end=' ')
-                self.print("")
+                self.police_status[police.id] = police.status
 
-
-            # Let' each police circulate around an area that cell inside the area have all sound types
-            self.police_circulating_areas = {}
-            for police_id, bombsites in self.police_bomb_sites.items():
-
-                bombsite_areas = {}
-                for i in range(self.world.height):
-                    for j in range(self.world.width):
-                        l = self.sound_board[i][j]
-                        a, b, c, site_pos = 0, 0, 0, [None, None, None]
-                        for sound in l:
-                            if sound[0] == ESoundIntensity.Strong:
-                                a += 1
-                                site_pos[0] = sound[1], sound[2]
-                            elif sound[0] == ESoundIntensity.Normal:
-                                b += 1
-                                site_pos[1] = sound[1], sound[2]
-                            else:
-                                c += 1
-                                site_pos[2] = sound[1], sound[2]
-                        value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
-                        if self.world.board[i][j] == ECell.Empty and value in values:
-                            for pos in site_pos:
-                                if pos and pos in [(t[1], t[2]) for t in self.police_bomb_sites[police_id]]:
-                                    if pos not in bombsite_areas:
-                                        bombsite_areas[pos] = []
-                                    bombsite_areas[pos].append((i+j, i, j))
-
-                selected_areas = []
-                for first_site in list(bombsite_areas.values())[0]:
-                    choice_list = [first_site]
-                    for other_site in list(bombsite_areas.values())[1:]:
-                        choice_list.append(AI._nearest(choice_list[-1], other_site))
-                    if not selected_areas:
-                        selected_areas = choice_list
-                    if AI._pathdistance(choice_list) < AI._pathdistance(selected_areas):
-                        selected_areas = choice_list
-                selected_areas = list(set(selected_areas))
-                selected_areas.sort()
-                for area in selected_areas:
-                    self.print("(%d, %d) : %s" %(area[1], area[2], self.sound_board[area[1]][area[2]]))
-                self.print("---------- ---------- ----------")
-                self.police_circulating_areas[police_id] = selected_areas
-                
-            self.print("Polices circulating areas:")
-            self.print(self.police_circulating_areas)
-
-            self.police_circulate_index = {}
-            self.police_circulate_iter = {}
-            for police_id, areas in self.police_circulating_areas.items():
-                self.police_circulate_index[police_id] = len(areas)-1
-                self.police_circulate_iter[police_id] = 1
+            self.update_bombsites()
 
             # Path to be followed by hearing an specific bomb sound:
             self.path2 = {}
@@ -216,11 +114,148 @@ class AI(RealtimeAI):
                 self.third_terrorist_strategy,
                 self.fourth_terrorist_strategy,
                 self.fifth_terrorist_strategy
-            ] 
+            ]
+
+    def update_bombsites(self):
+
+        # Path to be followed for defusing a bomb:
+        self.path = {}
+        self.police_bomb_site = {}
+
+        # Sorting all bomb site places:
+        self.bomb_sites = []
+        tmp_bomb_sites = []
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                if self.world.board[i][j] in self.BOMBSITES_ECELL and self._valid_bombsite((i, j)):
+                    self.bomb_sites.append((i+j, i, j))
+                    tmp_bomb_sites.append((i+j, i, j))
+        self.bomb_sites.sort()
+        tmp_bomb_sites.sort()
+        
+        self.print("All map bomb sites:")
+        self.print(self.bomb_sites)
+
+        # Allocating bomb sites to polices:
+        self.police_bomb_sites = {}
+        P, B = 0, len(tmp_bomb_sites)
+        for police in self.world.polices:
+            if police.status == EAgentStatus.Alive:
+                P += 1
+        for police in self.world.polices:
+            if police.status == EAgentStatus.Dead:
+                continue
+            allocation_len = B//P if B%P==0 else B//P +1 if police.id < B%P else B//P
+            allocation_list = [tmp_bomb_sites[-1]]
+            choice_list = [(AI._mdistance(t, allocation_list[0]), t[1], t[2]) for t in tmp_bomb_sites]
+            choice_list.sort()
+            allocation_list = choice_list[:allocation_len]
+            for bombsite in allocation_list:
+                tmp_bomb_sites.remove((bombsite[1]+bombsite[2], bombsite[1], bombsite[2]))
+            self.police_bomb_sites[police.id] = allocation_list
+
+        self.print("Map bomb site to polices allocation:")
+        self.print(self.police_bomb_sites)
+
+        # Sound board to determine what sounds could be heared from an specified cell
+        self.sound_board = Sound(self.world, [(site[1], site[2]) for site in self.bomb_sites]).fill()
+        self.print("Sound board: ")
+        for i in range(self.world.height):
+            for j in range(self.world.width):
+                l = self.sound_board[i][j]
+                a, b, c, site_pos = 0, 0, 0, [None, None, None]
+                for sound in l:
+                    if sound[0] == ESoundIntensity.Strong:
+                        a += 1
+                        site_pos[0] = sound[1], sound[2]
+                    elif sound[0] == ESoundIntensity.Normal:
+                        b += 1
+                        site_pos[1] = sound[1], sound[2]
+                    else:
+                        c += 1
+                        site_pos[2] = sound[1], sound[2]
+                value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
+                self.print("%03d" %(value) if self.world.board[i][j] == ECell.Empty else "---", end=' ')
+            self.print("")
+
+
+        # Let each police circulate around an area that cell inside the area have all sound types
+        self.police_circulating_areas = {}
+        for police_id, bombsites in self.police_bomb_sites.items():
+
+            bombsite_areas = {}
+            for i in range(self.world.height):
+                for j in range(self.world.width):
+                    l = self.sound_board[i][j]
+                    a, b, c, site_pos = 0, 0, 0, [None, None, None]
+                    for sound in l:
+                        if sound[0] == ESoundIntensity.Strong:
+                            a += 1
+                            site_pos[0] = sound[1], sound[2]
+                        elif sound[0] == ESoundIntensity.Normal:
+                            b += 1
+                            site_pos[1] = sound[1], sound[2]
+                        else:
+                            c += 1
+                            site_pos[2] = sound[1], sound[2]
+                    value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
+                    if self.world.board[i][j] == ECell.Empty and value in values:
+                        for pos in site_pos:
+                            if pos and pos in [(t[1], t[2]) for t in self.police_bomb_sites[police_id]]:
+                                if pos not in bombsite_areas:
+                                    bombsite_areas[pos] = []
+                                bombsite_areas[pos].append((i+j, i, j))
+            self.print("Agent %d bombsite areas:" % police_id)
+            self.print(bombsite_areas)
+
+            selected_areas = []
+            for first_site in list(bombsite_areas.values())[0]:
+                choice_list = [first_site]
+                for other_site in list(bombsite_areas.values())[1:]:
+                    choice_list.append(AI._nearest(choice_list[-1], other_site))
+                if not selected_areas:
+                    selected_areas = choice_list
+                if AI._pathdistance(choice_list) < AI._pathdistance(selected_areas):
+                    selected_areas = choice_list
+            selected_areas = list(set(selected_areas))
+            selected_areas.sort()
+            self.print("Agent %d selected areas:" % police_id)
+            for area in selected_areas:
+                self.print("(%d, %d) : %s" %(area[1], area[2], self.sound_board[area[1]][area[2]]))
+            self.print("---------- ---------- ----------")
+            self.police_circulating_areas[police_id] = selected_areas
+            
+        self.print("Polices circulating areas:")
+        self.print(self.police_circulating_areas)
+
+        self.police_circulate_index = {}
+        self.police_circulate_iter = {}
+        for police_id, areas in self.police_circulating_areas.items():
+            self.police_circulate_index[police_id] = len(areas)-1
+            self.police_circulate_iter[police_id] = 1
+
   
     def decide(self):
 
-        if self.my_side == "Terrorist":
+        if self.my_side == "Police":
+            flag = True
+            # Updating bombsites when a bomb explodes!
+            for i in range(self.world.height):
+                for j in range(self.world.width):
+                    if self.world.board[i][j] not in self.BOMBSITES_ECELL and (i+j, i, j) in self.bomb_sites:
+                        flag = False
+                        self.print("Unfortunately a bomb explosion has detected, restarting polices bombsites and circulating areas allocation.")
+                        self.update_bombsites()
+            # Updating allocation when a police dies :(
+            if flag:
+                for police in self.world.polices:
+                    if police.status != self.police_status[police.id]:
+                        self.police_status[police.id] = police.status
+                        self.print("Unfortunately we have lost one of our agents :( restarting allocation.")
+                        self.update_bombsites()
+            
+
+        else:
             # Updating free bomb sites:
             for i in range(self.world.height):
                 for j in range(self.world.width):
@@ -232,7 +267,7 @@ class AI(RealtimeAI):
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
 
         for agent in my_agents:
-            if agent.status is EAgentStatus.Dead:
+            if agent.status == EAgentStatus.Dead:
                 continue
             self.print("Agent %d position (%d, %d)" %(agent.id, agent.position.y, agent.position.x))
             if self.my_side == 'Police':
@@ -308,10 +343,10 @@ class AI(RealtimeAI):
                 distance = AI._distance(agent.position, bomb.position)
                 if distance <= self.world.constants.police_vision_distance:
                     # Checking wether bomb is going to explode when police arrives
-                    g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+                    g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
                     path = g.bfs((bomb.position.y, bomb.position.x))
                     if path is None:
-                        return False
+                        return True
                     if agent.id in self.path2:
                         del self.path2[agent.id] 
                     if agent.id in self.path3:
@@ -373,7 +408,7 @@ class AI(RealtimeAI):
         if dest is None or dest not in [(t[1], t[2]) for t in self.police_bomb_sites[agent.id]]:
             return False            
         # Let's go and defuseeee :))
-        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
         path = g.bfs(dest, False)
         if path is None:
                 return False
@@ -406,7 +441,7 @@ class AI(RealtimeAI):
         
     def seventh_police_strategy(self, agent:Police):
         # Let's find a path from agent's position to one of its circulating areas:
-        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+        g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
         _index = self.police_circulate_index[agent.id]
         dest = self.police_circulating_areas[agent.id][_index]
         # Iterating from start to end, then from end to start.
@@ -441,7 +476,7 @@ class AI(RealtimeAI):
                 police_pos = police.position
         if police_pos:
             # Escaping from misreable police:
-            directions, selected_direction = self._empty_directions(agent.position), None
+            directions, selected_direction = self._empty_directions(agent), None
             delta_x, delta_y = AI._sub_pos(police_pos, agent.position)
             if delta_x >= 0 and delta_y >= 0:
                 if delta_x <= delta_y:
@@ -549,7 +584,7 @@ class AI(RealtimeAI):
             else:
                 dest = None
         if dest:
-            g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos())
+            g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
             path = g.bfs(dest)
             if path:
                 # Move!
@@ -565,12 +600,12 @@ class AI(RealtimeAI):
                 # Your way is closed:) please wait.
         return False
     
-    def _empty_directions(self, position):
+    def _empty_directions(self, agent):
         # Adjacent empty cells of a position make some directions...
-        empty_directions = []
+        position, empty_directions = agent.position, []
         for direction in self.DIRECTIONS:
             pos = AI._sum_pos_tuples((position.x, position.y), self.DIR_TO_POS[direction])
-            agents_pos = self._calculate_black_pos()
+            agents_pos = self._calculate_black_pos(agent)
             if self.world.board[pos[1]][pos[0]] == ECell.Empty and (pos[1], pos[0]) not in agents_pos:
                 empty_directions.append(direction)
         return empty_directions
@@ -593,13 +628,13 @@ class AI(RealtimeAI):
     def _distance(first:Position, second:Position):
         return abs(first.x - second.x) + abs(first.y - second.y)
     
-    def _calculate_black_pos(self):
-        # My alive agents positions:
+    def _calculate_black_pos(self, agent):
+        # Alive agent positions around an specified agent: 
         black_pos = []
         my_agents = self.world.polices if self.my_side == 'Police' else self.world.terrorists
-        for agent in my_agents:
-            if agent.status is not EAgentStatus.Dead:
-                black_pos.append((agent.position.y, agent.position.x))
+        for my_agent in my_agents:
+            if my_agent.status is not EAgentStatus.Dead and my_agent != agent and AI._distance(my_agent.position, agent.position) == 1:
+                black_pos.append((my_agent.position.y, my_agent.position.x))
         return black_pos
 
     @staticmethod

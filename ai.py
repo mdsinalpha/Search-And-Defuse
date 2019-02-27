@@ -276,6 +276,7 @@ class AI(RealtimeAI):
                     if strategy(agent):
                         break
             else:
+                self.bomb_defuser_pos = None
                 for strategy in self.terrorist_strategies:
                     if strategy(agent):
                         break
@@ -474,54 +475,99 @@ class AI(RealtimeAI):
         for police in self.world.polices:
             if AI._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
                 police_pos = police.position
+                # A police found around, let's make sure that he/she is defusing a bomb or not:
+                for bomb in self.world.bombs:
+                    if bomb.defuser_id == police.id and police.defusion_remaining_time > self.world.constants.police_vision_distance:
+                        # Police is defusing a bomb, let's escape from a better way!
+                        self.bomb_defuser_pos = (police.position.y, police.position.x)
+                        police_pos = None
+                        if agent.id in self.terrorist_bomb_site:
+                            del self.terrorist_bomb_site[agent.id]
+                        if agent.id in self.path:
+                            del self.path[agent.id]
+                        break
         if police_pos:
             # Escaping from misreable police:
+            self.print("Near police detected at (%d, %d)" % (police_pos.y, police_pos.x))
             directions, selected_direction = self._empty_directions(agent), None
-            delta_x, delta_y = AI._sub_pos(police_pos, agent.position)
+            delta_y, delta_x = AI._sub_pos(police_pos, agent.position)
+            self.print("Escaping with (delta_y=%d, delta_x=%d)..." %(delta_y, delta_x))
             if delta_x >= 0 and delta_y >= 0:
                 if delta_x <= delta_y:
                     if ECommandDirection.Left in directions:
                         selected_direction = ECommandDirection.Left
                     elif ECommandDirection.Up in directions:
                         selected_direction = ECommandDirection.Up
+                    elif ECommandDirection.Down in directions:
+                        selected_direction = ECommandDirection.Down
+                    elif ECommandDirection.Right in directions:
+                        selected_direction = ECommandDirection.Right
                 else:
                     if ECommandDirection.Up in directions:
                         selected_direction = ECommandDirection.Up
                     elif ECommandDirection.Left in directions:
                         selected_direction = ECommandDirection.Left
+                    elif ECommandDirection.Right in directions:
+                        selected_direction = ECommandDirection.Right
+                    elif ECommandDirection.Down in directions:
+                        selected_direction = ECommandDirection.Down
             elif delta_x >= 0 and delta_y < 0:
                 if delta_x <= -delta_y:
                     if ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
                     elif ECommandDirection.Up in directions:
                         selected_direction = ECommandDirection.Up
+                    elif ECommandDirection.Down in directions:
+                        selected_direction = ECommandDirection.Down
+                    elif ECommandDirection.Left in directions:
+                        selected_direction = ECommandDirection.Left
                 else:
                     if ECommandDirection.Up in directions:
                         selected_direction = ECommandDirection.Up
                     elif ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
+                    elif ECommandDirection.Left in directions:
+                        selected_direction = ECommandDirection.Left
+                    elif ECommandDirection.Down in directions:
+                        selected_direction = ECommandDirection.Down
             elif delta_x < 0 and delta_y >= 0:
                 if -delta_x <= delta_y:
                     if ECommandDirection.Left in directions:
                         selected_direction = ECommandDirection.Left
                     elif ECommandDirection.Down in directions:
                         selected_direction = ECommandDirection.Down
+                    elif ECommandDirection.Up in directions:
+                        selected_direction = ECommandDirection.Up
+                    elif ECommandDirection.Right in directions:
+                        selected_direction = ECommandDirection.Right
                 else:
                     if ECommandDirection.Down in directions:
                         selected_direction = ECommandDirection.Down
                     elif ECommandDirection.Left in directions:
                         selected_direction = ECommandDirection.Left
+                    elif ECommandDirection.Right in directions:
+                        selected_direction = ECommandDirection.Right
+                    elif ECommandDirection.Up in directions:
+                        selected_direction = ECommandDirection.Up
             else:
                 if -delta_x <= -delta_y:
                     if ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
                     elif ECommandDirection.Down in directions:
                         selected_direction = ECommandDirection.Down
+                    elif ECommandDirection.Up in directions:
+                        selected_direction = ECommandDirection.Up
+                    elif ECommandDirection.Left in directions:
+                        selected_direction = ECommandDirection.Left
                 else:
-                   if ECommandDirection.Down in directions:
+                    if ECommandDirection.Down in directions:
                         selected_direction = ECommandDirection.Down
-                   elif ECommandDirection.Right in directions:
+                    elif ECommandDirection.Right in directions:
                         selected_direction = ECommandDirection.Right
+                    elif ECommandDirection.Left in directions:
+                        selected_direction = ECommandDirection.Left
+                    elif ECommandDirection.Up in directions:
+                        selected_direction = ECommandDirection.Up
             if selected_direction:
                 if agent.id in self.terrorist_bomb_site:
                     del self.terrorist_bomb_site[agent.id]
@@ -540,7 +586,12 @@ class AI(RealtimeAI):
         return False
 
     def third_terrorist_strategy(self, agent:Terrorist):
-        # When a terrorist is planting a bomb and there is no police anroud, we let him complete his operation:)
+        if agent.footstep_sounds.count(ESoundIntensity.Strong) and (self.world.constants.sound_ranges[ESoundIntensity.Strong] - self.world.constants.police_vision_distance) * 0.5 <= agent.planting_remaining_time:
+            self.print("Near police detected while terrorist %d was planting a bomb." %(agent.id))
+            # Survive is better than planting this bomb.
+            self.move(agent.id, self._bombsite_direction(agent))
+            return True
+        # When a terrorist is planting a bomb and there is no police around, we let him complete his operation:)
         return agent.planting_remaining_time != -1
     
     def fourth_terrorist_strategy(self, agent:Terrorist):
@@ -571,7 +622,7 @@ class AI(RealtimeAI):
             # Let's find a path to nearest free bomb site for this lucky terrorist:
             bombsite_index, min_distance = -1, float("inf")
             for index, bombsite in enumerate(self.free_bomb_sites):
-                path = Graph(self.world, (agent.position.y, agent.position.x)).bfs(bombsite)
+                path = Graph(self.world, (agent.position.y, agent.position.x), [self.bomb_defuser_pos] if self.bomb_defuser_pos else []).bfs(bombsite)
                 distance = float("inf") if path is None else len(path)
                 if distance < min_distance:
                     bombsite_index, min_distance = index, distance
@@ -584,7 +635,11 @@ class AI(RealtimeAI):
             else:
                 dest = None
         if dest:
-            g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
+            black_pos = self._calculate_black_pos(agent)
+            # Although we are not escaping from a police, we should watch out for defuser police position! 
+            if self.bomb_defuser_pos:
+                black_pos.append(self.bomb_defuser_pos)
+            g = Graph(self.world, (agent.position.y, agent.position.x), black_pos)
             path = g.bfs(dest)
             if path:
                 # Move!
@@ -609,6 +664,13 @@ class AI(RealtimeAI):
             if self.world.board[pos[1]][pos[0]] == ECell.Empty and (pos[1], pos[0]) not in agents_pos:
                 empty_directions.append(direction)
         return empty_directions
+    
+    def _bombsite_direction(self, agent):
+        position = agent.position
+        for direction in self.DIRECTIONS:
+            pos = pos = AI._sum_pos_tuples((position.x, position.y), self.DIR_TO_POS[direction])
+            if self.world.board[pos[1]][pos[0]] in self.BOMBSITES_ECELL:
+                return direction
 
     def _has_bomb(self, position):
         for bomb in self.world.bombs:

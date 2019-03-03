@@ -25,7 +25,7 @@ class Graph:
             while it != self.source:
                 path.append(it)
                 it = self.pre[it]
-            if pop_destination:
+            if pop_destination and path:
                 path.pop(0)
             path.reverse()
             return path

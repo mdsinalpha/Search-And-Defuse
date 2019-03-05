@@ -108,6 +108,9 @@ class AI(RealtimeAI):
             # Waiting counter to confuse polices after escape:
             self.waiting_counter = [0 for i in range(len(self.world.terrorists))]
 
+            # Strong sounds counter:
+            self.strong_sounds = [0 for i in range(len(self.world.terrorists))]
+
             self.terrorist_strategies = [
                 self.first_terrorist_strategy,
                 self.second_terrorist_strategy,
@@ -214,44 +217,7 @@ class AI(RealtimeAI):
                                     bombsite_areas[pos].append((i+j, i, j))
             self.print("Agent %d bombsite areas:" % police_id)
             self.print(bombsite_areas)
-            '''
-            # DP
-            best_path, pre_path = {}, {}
-            for bombsite_index in range(len(bombsite_areas.keys())):
-                bombsite, areas = list(bombsite_areas.keys())[bombsite_index], list(bombsite_areas.values())[bombsite_index]
-                for area_index, area in enumerate(areas):
-                    if bombsite_index == 0:
-                        best_path[(bombsite_index, area_index)] = 0
-                        pre_path[(bombsite_index, area_index)] = None
-                    else:
-                        min_path_value, pre_area_index = float("inf"), 0
-                        for prev_area_index, prev_area in enumerate(list(bombsite_areas.values())[bombsite_index-1]):
-                            current_path_value = best_path[(bombsite_index-1, prev_area_index)] + self._mdistance(area, prev_area)
-                            if current_path_value < min_path_value:
-                                min_path_value = current_path_value
-                                pre_area_index = prev_area_index
-                        best_path[(bombsite_index, area_index)] = min_path_value
-                        pre_path[(bombsite_index, area_index)] = pre_area_index
-    
-            
-            last_bombsite_index, last_area_index, min_path_value = len(bombsite_areas.keys())-1, 0, float("inf")
-            for area_index in range(len(list(bombsite_areas.values())[last_bombsite_index])):
-                if best_path[(last_bombsite_index, area_index)] < min_path_value:
-                    min_path_value = best_path[(last_bombsite_index, area_index)]
-                    last_area_index = area_index
-            
-
-            self.print(best_path)
-            self.print(pre_path)
-
-            selected_areas = []
-            while pre_path[(last_bombsite_index, last_area_index)]:
-                area = list(bombsite_areas.values())[last_bombsite_index][last_area_index]
-                if area not in selected_areas:
-                    selected_areas.append(area)
-                last_area_index = pre_path[(last_bombsite_index, last_area_index)]
-                last_bombsite_index -= 1
-            '''
+           
             selected_areas = []
             for first_site in list(bombsite_areas.values())[0]:
                 choice_list = [first_site]
@@ -538,43 +504,7 @@ class AI(RealtimeAI):
                             del self.path[agent.id]
                         break
         if police_pos:
-            # Escaping from misreable police:
-            self.print("Near police detected at (%d, %d)" % (police_pos.y, police_pos.x))
-            directions, selected_direction, escape_priority_queue = self._empty_directions(agent), None, []
-            delta_y, delta_x = AI._sub_pos(police_pos, agent.position)
-            self.print("Escaping with (delta_y=%d, delta_x=%d)..." %(delta_y, delta_x))
-            if delta_x >= 0 and delta_y >= 0:
-                if delta_x == delta_y:
-                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Up]
-                elif delta_x < delta_y:
-                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Up, ECommandDirection.Down]
-                else:
-                    escape_priority_queue = [ECommandDirection.Up, ECommandDirection.Left, ECommandDirection.Right]
-            elif delta_x >= 0 and delta_y < 0:
-                if delta_x == -delta_y:
-                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Up]
-                elif delta_x < -delta_y:
-                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Up, ECommandDirection.Down]
-                else:
-                    escape_priority_queue = [ECommandDirection.Up, ECommandDirection.Right, ECommandDirection.Left]
-            elif delta_x < 0 and delta_y >= 0:
-                if -delta_x == delta_y:
-                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Down]
-                elif -delta_x < delta_y:
-                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Down, ECommandDirection.Up]
-                else:
-                    escape_priority_queue = [ECommandDirection.Down, ECommandDirection.Left, ECommandDirection.Right]
-            else:
-                if -delta_x == -delta_y:
-                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Down]
-                elif -delta_x < -delta_y:
-                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Down, ECommandDirection.Up]
-                else:
-                    escape_priority_queue = [ECommandDirection.Down, ECommandDirection.Right, ECommandDirection.Left]
-            for escape_direction in escape_priority_queue:
-                if escape_direction in directions:
-                    selected_direction = escape_direction
-                    break
+            selected_direction = self._escape_direction(agent, police_pos)
             if selected_direction:
                 if agent.id in self.terrorist_bomb_site:
                     del self.terrorist_bomb_site[agent.id]
@@ -582,24 +512,103 @@ class AI(RealtimeAI):
                     del self.path[agent.id]
                 self.waiting_counter[agent.id] = 1
                 self.move(agent.id, selected_direction)
+            else:
+                # Let's try our chance and speculate where police wants to go after this cycle, then escape!
+                police_path = None
+                for bomb in self.world.bombs:
+                    if self._distance(bomb.position, agent.position) <= self.world.constants.terrorist_vision_distance:
+                        g = Graph(self.world, (police_pos.y, police_pos.x))
+                        path = g.bfs((bomb.position.y, bomb.position.x))
+                        if police_path is None:
+                            police_path = path
+                        elif len(path) < len(police_path):
+                            police_path = path
+                if not police_path:
+                    g = Graph(self.world, (police_pos.y, police_pos.x))
+                    police_path = g.bfs((agent.position.y, agent.position.x))
+                self.print("Police speculated path while escaping:")
+                self.print(police_path)
+                if police_path:
+                    selected_direction = self._escape_direction(agent, Position(police_path[0][1], police_path[0][0]))
+                    if agent.id in self.terrorist_bomb_site:
+                        del self.terrorist_bomb_site[agent.id]
+                    if agent.id in self.path:
+                        del self.path[agent.id]
+                    self.waiting_counter[agent.id] = 1
+                    self.move(agent.id, selected_direction)
             return True
         return False
 
+    def _escape_direction(self, agent:Terrorist, police_pos:tuple):
+        # Escaping from misreable police:
+        self.print("Near police detected at (%d, %d)" % (police_pos.y, police_pos.x))
+        directions, selected_direction, escape_priority_queue = self._empty_directions(agent), None, []
+        delta_x, delta_y = AI._sub_pos(police_pos, agent.position)
+        self.print("Escaping with (delta_y=%d, delta_x=%d)..." %(delta_y, delta_x))
+        if delta_x == 0:
+            if delta_y > 0:
+                escape_priority_queue = [ECommandDirection.Up, ECommandDirection.Left, ECommandDirection.Right]
+            else:
+                escape_priority_queue = [ECommandDirection.Down, ECommandDirection.Right, ECommandDirection.Left]
+        elif delta_y == 0:
+            if delta_x > 0:
+                escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Up, ECommandDirection.Down]
+            else:
+                escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Down, ECommandDirection.Up]
+        else:
+            if delta_x > 0 and delta_y > 0:
+                if delta_x > delta_y:
+                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Up]
+                else:
+                    escape_priority_queue = [ECommandDirection.Up, ECommandDirection.Left]
+            elif delta_x > 0 and delta_y < 0:
+                if delta_x > -delta_y:
+                    escape_priority_queue = [ECommandDirection.Left, ECommandDirection.Down]
+                else:
+                    escape_priority_queue = [ECommandDirection.Down, ECommandDirection.Left]
+            elif delta_x < 0 and delta_y > 0:
+                if -delta_x > delta_y:
+                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Up]
+                else:
+                    escape_priority_queue = [ECommandDirection.Up, ECommandDirection.Right]
+            else:
+                if -delta_x > -delta_y:
+                    escape_priority_queue = [ECommandDirection.Right, ECommandDirection.Down]
+                else:
+                    escape_priority_queue = [ECommandDirection.Down, ECommandDirection.Right] 
+        for escape_direction in escape_priority_queue:
+            if escape_direction in directions:
+                selected_direction = escape_direction
+                break
+        return selected_direction
+
+
     def second_terrorist_strategy(self, agent:Terrorist):
+        '''
         # Waiting...
         if self.waiting_counter[agent.id]:
             self.waiting_counter[agent.id] -= 1
             return True
+        '''
         return False
 
     def third_terrorist_strategy(self, agent:Terrorist):
-        if agent.footstep_sounds.count(ESoundIntensity.Strong) and (self.world.constants.sound_ranges[ESoundIntensity.Strong] - self.world.constants.police_vision_distance) * 0.5 <= agent.planting_remaining_time:
-            self.print("Near police detected while terrorist %d was planting a bomb." %(agent.id))
-            # Survive is better than planting this bomb.
-            self.move(agent.id, self._bombsite_direction(agent))
+        if agent.planting_remaining_time != -1:  
+            if agent.footstep_sounds.count(ESoundIntensity.Strong):
+                self.strong_sounds[agent.id] += 1
+            else:
+                self.strong_sounds[agent.id] = 0
+            strong_sound_const, police_vision = self.world.constants.sound_ranges[ESoundIntensity.Strong], self.world.constants.police_vision_distance
+            if self.strong_sounds[agent.id] >=  strong_sound_const - police_vision - 2:
+                self.strong_sounds[agent.id] = 0
+                self.print("Near police detected while terrorist %d was planting a bomb." %(agent.id))
+                # Survive is better than planting this bomb.
+                self.move(agent.id, self._bombsite_direction(agent))
+                # When a terrorist is planting a bomb and there is no police around, we let him complete his operation:)
             return True
-        # When a terrorist is planting a bomb and there is no police around, we let him complete his operation:)
-        return agent.planting_remaining_time != -1
+        else:
+            self.strong_sounds[agent.id] = 0
+        return False
     
     def fourth_terrorist_strategy(self, agent:Terrorist):
         # Continue to your path or plant a bomb
@@ -630,7 +639,7 @@ class AI(RealtimeAI):
             bombsite_index, min_distance = -1, float("inf")
             for index, bombsite in enumerate(self.free_bomb_sites):
                 path = Graph(self.world, (agent.position.y, agent.position.x), [self.bomb_defuser_pos] if self.bomb_defuser_pos else []).bfs(bombsite)
-                distance = float("inf") if path is None else len(path)
+                distance = float("inf") if path is None else len(path) // self._ecell_score(self.world.board[bombsite[0]][bombsite[1]]) 
                 if distance < min_distance:
                     bombsite_index, min_distance = index, distance
             if bombsite_index != -1:
@@ -721,8 +730,6 @@ class AI(RealtimeAI):
     
     @staticmethod
     def _nearest(t, l:list):
-        print("-----------------------------------------------------")
-        print(l)
         # Finding nearest element(minimum distance) of a list to a value.
         min_point, min_value = l[0], AI._mdistance(t, l[0])
         for point in l[1:]:
@@ -753,5 +760,15 @@ class AI(RealtimeAI):
                     queue.append(t)
                     self.visited_cells.append(t) 
             queue.pop(0)
+    
+    def _ecell_score(self, cell:ECell):
+        if cell ==  ECell.SmallBombSite:
+            return self.world.constants.score_coefficient_small_bomb_site
+        elif cell == ECell.MediumBombSite:
+            return self.world.constants.score_coefficient_medium_bomb_site
+        elif cell == ECell.LargeBombSite:
+            return self.world.constants.score_coefficient_large_bomb_site
+        elif cell == ECell.VastBombSite:
+            return self.world.constants.score_coefficient_vast_bomb_site
 
 

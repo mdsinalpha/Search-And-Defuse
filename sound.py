@@ -21,6 +21,9 @@ class Sound:
                         for item in l:
                             if item[0] == sound:
                                 new.append(item)
+                for item in l:
+                    if item[0] == "VISION":
+                        new.append(item)
                 self.sound_board[i][j] = new
         return self.sound_board
     
@@ -33,7 +36,9 @@ class Sound:
                 adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
                 for t in adjacent:
                     if self.world.board[t[0]][t[1]] != ECell.Wall and t not in visited:
-                        if cnt <= self.X:
+                        if cnt <= self.world.constants.police_vision_distance:
+                            self.sound_board[t[0]][t[1]].append(("VISION", bombsite[0], bombsite[1]))
+                        elif cnt <= self.X:
                             self.sound_board[t[0]][t[1]].append((ESoundIntensity.Strong, bombsite[0], bombsite[1]))
                         elif cnt <= self.Y:
                             self.sound_board[t[0]][t[1]].append((ESoundIntensity.Normal, bombsite[0], bombsite[1]))

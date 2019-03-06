@@ -121,7 +121,7 @@ class AI(RealtimeAI):
 
     def update_bombsites(self):
 
-        self.visited_cells = []
+        self.visited_cells = {}
         for police in self.world.polices:
             if police.status == EAgentStatus.Alive:
                 self._bfs((police.position.y, police.position.x))
@@ -156,7 +156,7 @@ class AI(RealtimeAI):
                 continue
             allocation_len = B//P if B%P==0 else B//P +1 if police.id < B%P else B//P
             allocation_list = [tmp_bomb_sites[-1]]
-            choice_list = [(AI._mdistance(t, allocation_list[0]), t[1], t[2]) for t in tmp_bomb_sites]
+            choice_list = [(self._bdistance(t, allocation_list[0]), t[1], t[2]) for t in tmp_bomb_sites]
             choice_list.sort()
             allocation_list = choice_list[:allocation_len]
             for bombsite in allocation_list:
@@ -172,7 +172,7 @@ class AI(RealtimeAI):
         for i in range(self.world.height):
             for j in range(self.world.width):
                 l = self.sound_board[i][j]
-                a, b, c, site_pos = 0, 0, 0, [None, None, None]
+                a, b, c, v, site_pos = 0, 0, 0, 0, [None, None, None, None]
                 for sound in l:
                     if sound[0] == ESoundIntensity.Strong:
                         a += 1
@@ -180,11 +180,14 @@ class AI(RealtimeAI):
                     elif sound[0] == ESoundIntensity.Normal:
                         b += 1
                         site_pos[1] = sound[1], sound[2]
-                    else:
+                    elif sound[0] == ESoundIntensity.Weak:
                         c += 1
                         site_pos[2] = sound[1], sound[2]
+                    else:
+                        v += 1 
+                        site_pos[3] = sound[1], sound[2]
                 value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
-                self.print("%03d" %(value) if self.world.board[i][j] == ECell.Empty else "---", end=' ')
+                self.print(("%03d" %(value) if v == 0 else "VVV") if self.world.board[i][j] == ECell.Empty else "---", end=' ')
             self.print("")
 
 
@@ -196,7 +199,7 @@ class AI(RealtimeAI):
             for i in range(self.world.height):
                 for j in range(self.world.width):
                     l = self.sound_board[i][j]
-                    a, b, c, site_pos = 0, 0, 0, [None, None, None]
+                    a, b, c, v, site_pos, v_pos = 0, 0, 0, 0, [None, None, None], []
                     for sound in l:
                         if sound[0] == ESoundIntensity.Strong:
                             a += 1
@@ -204,16 +207,21 @@ class AI(RealtimeAI):
                         elif sound[0] == ESoundIntensity.Normal:
                             b += 1
                             site_pos[1] = sound[1], sound[2]
-                        else:
+                        elif sound[0] == ESoundIntensity.Weak:
                             c += 1
                             site_pos[2] = sound[1], sound[2]
-                    value, values = a*100+b*10+c, [1, 10, 11, 100, 101, 110, 111]
-                    if self.world.board[i][j] == ECell.Empty and value in values:
+                        else:
+                            v += 1
+                            v_pos.append((sound[1], sound[2]))
+                    # TODO Change!
+                    value, values = a*100+b*10+c, [100]
+                    site_pos.extend(v_pos)
+                    if self.world.board[i][j] == ECell.Empty and (v >= 1 or value in values):
                         for pos in site_pos:
                             if pos and pos in [(t[1], t[2]) for t in self.police_bomb_sites[police_id]]:
                                 if pos not in bombsite_areas:
                                     bombsite_areas[pos] = []
-                                if (i, j) in self.visited_cells:
+                                if (i, j) in self.visited_cells.keys():
                                     bombsite_areas[pos].append((i+j, i, j))
             self.print("Agent %d bombsite areas:" % police_id)
             self.print(bombsite_areas)
@@ -222,10 +230,10 @@ class AI(RealtimeAI):
             for first_site in list(bombsite_areas.values())[0]:
                 choice_list = [first_site]
                 for other_site in list(bombsite_areas.values())[1:]:
-                    choice_list.append(AI._nearest(choice_list[-1], other_site))
+                    choice_list.append(self._nearest(choice_list[-1], other_site))
                 if not selected_areas:
                     selected_areas = choice_list
-                if AI._pathdistance(choice_list) < AI._pathdistance(selected_areas):
+                if self._pathdistance(choice_list) < self._pathdistance(selected_areas):
                     selected_areas = choice_list
             selected_areas = list(set(selected_areas))
             selected_areas.sort()
@@ -291,6 +299,10 @@ class AI(RealtimeAI):
                         print(e)
             else:
                 self.bomb_defuser_pos = None
+                if ESoundIntensity.Strong in agent.footstep_sounds:
+                    self.strong_sounds[agent.id] += 1
+                else:
+                    self.strong_sounds[agent.id] = 0
                 for strategy in self.terrorist_strategies:
                     try:
                         if strategy(agent):
@@ -320,6 +332,7 @@ class AI(RealtimeAI):
         return False
 
     def move(self, agent_id, move_direction):
+        
         self.send_command(Move(id=agent_id, direction=move_direction))
     
     def _move(self, agent_id:int, end_pos:Position, start_pos:Position):
@@ -328,7 +341,7 @@ class AI(RealtimeAI):
             self.move(agent_id, self.POS_TO_DIR[sub])
             return True
         return False
-
+    
     
     def first_police_strategy(self, agent:Police):
         # When a police is defusing a bomb, we let him complete his operation:)
@@ -410,7 +423,7 @@ class AI(RealtimeAI):
                 site_pos[0] = sound[1], sound[2]
             elif sound[0] == ESoundIntensity.Normal:
                 site_pos[1] = sound[1], sound[2]
-            else:
+            elif sound[0] == ESoundIntensity.Weak:
                 site_pos[2] = sound[1], sound[2]
         # Listening to server for a sound with priority of strong, normal and week...
         if site_pos[0] and ESoundIntensity.Strong in agent.bomb_sounds:
@@ -419,11 +432,15 @@ class AI(RealtimeAI):
         elif site_pos[1] and ESoundIntensity.Normal in agent.bomb_sounds:
             self.print("Normal sound bomb found: (%d, %d)" %(site_pos[1][0], site_pos[1][1]))
             dest = site_pos[1]
+        # TODO Check
+        '''
         elif site_pos[2] and ESoundIntensity.Weak in agent.bomb_sounds:
             self.print("Weak sound bomb found: (%d, %d)" %(site_pos[2][0], site_pos[2][1]))
             dest = site_pos[2]
-        # Checking that exact destination of a planted bomb is found and is allocated to this agent!
-        if dest is None or dest not in [(t[1], t[2]) for t in self.police_bomb_sites[agent.id]]:
+        '''
+        # TODO Change!
+        # Checking that exact destination of a planted bomb is found!
+        if dest is None:
             return False            
         # Let's go and defuseeee :))
         g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
@@ -488,6 +505,33 @@ class AI(RealtimeAI):
     
     def first_terrorist_strategy(self, agent:Terrorist):
         # If there's a police near, change direction and run!
+        police_positions, police_pos = [], None
+        for police in self.world.polices:
+            if AI._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
+                police_positions.append(police.position)
+        # Escaping from two or more polices:
+        if len(police_positions) > 1:
+            escape_directions = self._escape_direction(agent, police_positions[0])[1]
+            for police_pos in police_positions[1:]:
+                escape_directions = list(set(escape_directions)&set(self._escape_direction(agent, police_pos)[1]))
+            selected_direction, directions = None, self._empty_directions(agent)
+            for direction in escape_directions:
+                if direction in directions:
+                    selected_direction = direction
+                    break
+            if selected_direction:
+                if agent.id in self.terrorist_bomb_site:
+                    del self.terrorist_bomb_site[agent.id]
+                if agent.id in self.path:
+                    del self.path[agent.id]
+                self.waiting_counter[agent.id] = 1
+                self.move(agent.id, selected_direction)
+                self.print("Escaping from two or more polices to: ", end='')
+                self.print(selected_direction)
+                return True
+        elif len(police_positions) == 1:
+            police_pos = police_positions[0]
+        '''
         police_pos = None
         for police in self.world.polices:
             if AI._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
@@ -503,8 +547,9 @@ class AI(RealtimeAI):
                         if agent.id in self.path:
                             del self.path[agent.id]
                         break
+                '''
         if police_pos:
-            selected_direction = self._escape_direction(agent, police_pos)
+            selected_direction = self._escape_direction(agent, police_pos)[0]
             if selected_direction:
                 if agent.id in self.terrorist_bomb_site:
                     del self.terrorist_bomb_site[agent.id]
@@ -514,28 +559,25 @@ class AI(RealtimeAI):
                 self.move(agent.id, selected_direction)
             else:
                 # Let's try our chance and speculate where police wants to go after this cycle, then escape!
-                police_path = None
+                # TODO Check
+                stay = False
                 for bomb in self.world.bombs:
                     if self._distance(bomb.position, agent.position) <= self.world.constants.terrorist_vision_distance:
-                        g = Graph(self.world, (police_pos.y, police_pos.x))
-                        path = g.bfs((bomb.position.y, bomb.position.x))
-                        if police_path is None:
-                            police_path = path
-                        elif len(path) < len(police_path):
-                            police_path = path
-                if not police_path:
+                       stay = True
+                       break
+                if not stay:
                     g = Graph(self.world, (police_pos.y, police_pos.x))
                     police_path = g.bfs((agent.position.y, agent.position.x))
-                self.print("Police speculated path while escaping:")
-                self.print(police_path)
-                if police_path:
-                    selected_direction = self._escape_direction(agent, Position(police_path[0][1], police_path[0][0]))
-                    if agent.id in self.terrorist_bomb_site:
-                        del self.terrorist_bomb_site[agent.id]
-                    if agent.id in self.path:
-                        del self.path[agent.id]
-                    self.waiting_counter[agent.id] = 1
-                    self.move(agent.id, selected_direction)
+                    self.print("Police speculated path while escaping:")
+                    self.print(police_path)
+                    if police_path:
+                        selected_direction = self._escape_direction(agent, Position(police_path[0][1], police_path[0][0]))[0]
+                        if agent.id in self.terrorist_bomb_site:
+                            del self.terrorist_bomb_site[agent.id]
+                        if agent.id in self.path:
+                            del self.path[agent.id]
+                        self.waiting_counter[agent.id] = 1
+                        self.move(agent.id, selected_direction)
             return True
         return False
 
@@ -580,7 +622,7 @@ class AI(RealtimeAI):
             if escape_direction in directions:
                 selected_direction = escape_direction
                 break
-        return selected_direction
+        return selected_direction, escape_priority_queue
 
 
     def second_terrorist_strategy(self, agent:Terrorist):
@@ -590,24 +632,23 @@ class AI(RealtimeAI):
             self.waiting_counter[agent.id] -= 1
             return True
         '''
+        # When a bomb is exploding around you, avoid it!
+        for bomb in self.world.bombs:
+            if bomb.explosion_remaining_time == 1 and self._distance(agent.position, bomb.position) == 1:
+                self.move(agent.id, self._empty_directions(agent)[0])
+                return True 
         return False
 
     def third_terrorist_strategy(self, agent:Terrorist):
         if agent.planting_remaining_time != -1:  
-            if agent.footstep_sounds.count(ESoundIntensity.Strong):
-                self.strong_sounds[agent.id] += 1
-            else:
-                self.strong_sounds[agent.id] = 0
             strong_sound_const, police_vision = self.world.constants.sound_ranges[ESoundIntensity.Strong], self.world.constants.police_vision_distance
-            if self.strong_sounds[agent.id] >=  strong_sound_const - police_vision - 2:
-                self.strong_sounds[agent.id] = 0
+            # TODO Check
+            if self.strong_sounds[agent.id] >= strong_sound_const - (police_vision+1):
                 self.print("Near police detected while terrorist %d was planting a bomb." %(agent.id))
                 # Survive is better than planting this bomb.
                 self.move(agent.id, self._bombsite_direction(agent))
                 # When a terrorist is planting a bomb and there is no police around, we let him complete his operation:)
             return True
-        else:
-            self.strong_sounds[agent.id] = 0
         return False
     
     def fourth_terrorist_strategy(self, agent:Terrorist):
@@ -715,25 +756,29 @@ class AI(RealtimeAI):
                 black_pos.append((my_agent.position.y, my_agent.position.x))
         return black_pos
 
-    @staticmethod
-    def _mdistance(t1, t2):
+
+    def _mdistance(self, t1, t2):
+        # return abs(self.visited_cells[(t1[1], t1[2])] - self.visited_cells[(t2[1], t2[2])])
         return abs(t1[1]-t2[1]) + abs(t1[2]-t2[2])
     
-    @staticmethod
-    def _pathdistance(l:list):
+    def _bdistance(self, t1, t2):
+        g = Graph(self.world, (t1[1], t1[2]))
+        path = g.bfs((t2[1], t2[2]))
+        return float("inf") if path is None else len(path)
+    
+    def _pathdistance(self, l:list):
         # Calculating manhataan distance taken when following a path.(list of positions)
         sum = 0
         for index, point in enumerate(l):
             if index < len(l) - 1:
-                sum += AI._mdistance(point, l[index+1])
+                sum +=  self._mdistance(point, l[index+1])
         return sum
     
-    @staticmethod
-    def _nearest(t, l:list):
+    def _nearest(self, t, l:list):
         # Finding nearest element(minimum distance) of a list to a value.
-        min_point, min_value = l[0], AI._mdistance(t, l[0])
+        min_point, min_value = l[0], self._mdistance(t, l[0])
         for point in l[1:]:
-            distance = AI._mdistance(t, point)
+            distance = self._mdistance(t, point)
             if  distance < min_value:
                 min_point = point
                 min_value = distance
@@ -750,16 +795,20 @@ class AI(RealtimeAI):
         return res
     
     def _bfs(self, source:tuple):
-        self.visited_cells.append(source)
-        queue = [source]
+        self.visited_cells[source] = 0
+        queue, depth = [source], 1
         while queue:
-            x, y = queue[0]
-            adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
-            for t in adjacent:
-                if self.world.board[t[0]][t[1]] == ECell.Empty and t not in self.visited_cells:
-                    queue.append(t)
-                    self.visited_cells.append(t) 
-            queue.pop(0)
+            frontier = []
+            for item in queue:
+                x, y = item
+                adjacent = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
+                for t in adjacent:
+                    if self.world.board[t[0]][t[1]] != ECell.Wall and t not in self.visited_cells.keys():
+                        self.visited_cells[t] = depth 
+                        if self.world.board[t[0]][t[1]] == ECell.Empty:
+                            frontier.append(t)
+            depth += 1
+            queue = frontier
     
     def _ecell_score(self, cell:ECell):
         if cell ==  ECell.SmallBombSite:

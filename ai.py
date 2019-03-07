@@ -70,6 +70,11 @@ class AI(RealtimeAI):
             for police in self.world.polices:
                 self.police_status[police.id] = police.status
 
+            # Path to be followed for defusing a bomb:
+            self.path = {}
+            self.police_bomb_site = {}
+            self.police_defusing_site = {}
+
             self.update_bombsites()
 
             # Path to be followed by hearing an specific bomb sound:
@@ -126,10 +131,6 @@ class AI(RealtimeAI):
             if police.status == EAgentStatus.Alive:
                 self._bfs((police.position.y, police.position.x))
                 break
-
-        # Path to be followed for defusing a bomb:
-        self.path = {}
-        self.police_bomb_site = {}
 
         # Sorting all bomb site places:
         self.bomb_sites = []
@@ -214,7 +215,7 @@ class AI(RealtimeAI):
                             v += 1
                             v_pos.append((sound[1], sound[2]))
                     # TODO Change!
-                    value, values = a*100+b*10+c, [100]
+                    value, values = a*100+b*10+c, [10, 100, 110]
                     site_pos.extend(v_pos)
                     if self.world.board[i][j] == ECell.Empty and (v >= 1 or value in values):
                         for pos in site_pos:
@@ -264,6 +265,16 @@ class AI(RealtimeAI):
                     if self.world.board[i][j] not in self.BOMBSITES_ECELL and (i+j, i, j) in self.bomb_sites:
                         flag = False
                         self.print("Unfortunately a bomb explosion has detected, restarting polices bombsites and circulating areas allocation.")
+                        for index, bomb in self.police_defusing_site.items():
+                            if bomb == (i, j):
+                                del self.police_defusing_site[index]
+                                break
+                        for index, bomb in self.police_bomb_site.items():
+                            if bomb == (i, j):
+                                del self.police_bomb_site[index]
+                                if index in self.path:
+                                    del self.path[index]
+                                break
                         self.update_bombsites()
             # Updating allocation when a police dies :(
             if flag:
@@ -292,11 +303,9 @@ class AI(RealtimeAI):
             if self.my_side == 'Police':
                 self.print("Agent %d hearing: %s" %(agent.id, agent.bomb_sounds))
                 for strategy in self.police_strategies:
-                    try:
-                        if strategy(agent):
-                            break
-                    except Error as e:
-                        print(e)
+                    if strategy(agent):
+                        break
+
             else:
                 self.bomb_defuser_pos = None
                 if ESoundIntensity.Strong in agent.footstep_sounds:
@@ -304,11 +313,8 @@ class AI(RealtimeAI):
                 else:
                     self.strong_sounds[agent.id] = 0
                 for strategy in self.terrorist_strategies:
-                    try:
-                        if strategy(agent):
-                            break
-                    except Error as e:
-                        print(e)
+                    if strategy(agent):
+                        break
         
     
     def plant(self, agent_id, bombsite_direction):
@@ -369,7 +375,7 @@ class AI(RealtimeAI):
         # Check each police vision to detect a bomb defusion:
         if self.world.bombs:
             for bomb in self.world.bombs:
-                if bomb.defuser_id != -1:
+                if bomb.defuser_id != -1 or ((bomb.position.y, bomb.position.x) in self.police_defusing_site.values() and (agent.id not in self.police_defusing_site or self.police_defusing_site[agent.id] != (bomb.position.y, bomb.position.x))):
                     continue
                 distance = AI._distance(agent.position, bomb.position)
                 if distance <= self.world.constants.police_vision_distance:
@@ -384,6 +390,7 @@ class AI(RealtimeAI):
                         del self.path3[agent.id]
                     self.police_bomb_site[agent.id] = (bomb.position.y, bomb.position.x)
                     self.path[agent.id] = path
+                    self.police_defusing_site[agent.id] = (bomb.position.y, bomb.position.x)
                     if len(self.path[agent.id]) * 0.5 + self.world.constants.bomb_defusion_time <= bomb.explosion_remaining_time:
                         # Walk to bomb or defuse it    
                         if self.path[agent.id]:
@@ -440,7 +447,7 @@ class AI(RealtimeAI):
         '''
         # TODO Change!
         # Checking that exact destination of a planted bomb is found!
-        if dest is None:
+        if dest is None or dest in self.police_defusing_site.values():
             return False            
         # Let's go and defuseeee :))
         g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
@@ -448,6 +455,7 @@ class AI(RealtimeAI):
         if path is None:
                 return False
         self.path2[agent.id] = path
+        self.police_defusing_site[agent.id] = dest
         if self.path2[agent.id]:
             if self._move(agent.id, Position(self.path2[agent.id][0][1], self.path2[agent.id][0][0]), agent.position):
                 self.path2[agent.id].pop(0)
@@ -462,6 +470,8 @@ class AI(RealtimeAI):
         return True
         
     def sixth_police_strategy(self, agent:Police):
+        if agent.id in self.police_defusing_site:
+            del self.police_defusing_site[agent.id]
         # Let's continue the path3:
         if agent.id in self.path3:
             if not self.path3[agent.id]:
@@ -634,9 +644,13 @@ class AI(RealtimeAI):
         '''
         # When a bomb is exploding around you, avoid it!
         for bomb in self.world.bombs:
-            if bomb.explosion_remaining_time == 1 and self._distance(agent.position, bomb.position) == 1:
-                self.move(agent.id, self._empty_directions(agent)[0])
-                return True 
+            if bomb.explosion_remaining_time == 1:
+                dis = self._distance(agent.position, bomb.position)
+                if dis == 1:
+                    self.move(agent.id, self._empty_directions(agent)[0])
+                    return True
+                elif dis == 2:
+                    return True
         return False
 
     def third_terrorist_strategy(self, agent:Terrorist):

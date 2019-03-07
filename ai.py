@@ -318,7 +318,9 @@ class AI(RealtimeAI):
         
     
     def plant(self, agent_id, bombsite_direction):
-        self.send_command(PlantBomb(id=agent_id, direction=bombsite_direction))
+        strong_sound_const, police_vision = self.world.constants.sound_ranges[ESoundIntensity.Strong], self.world.constants.police_vision_distance
+        if self.strong_sounds[agent_id] < strong_sound_const - (police_vision+2):
+            self.send_command(PlantBomb(id=agent_id, direction=bombsite_direction))
 
     def _plant(self, agent_id:int, end_pos:Position, start_pos:Position):
         sub = AI._sub_pos(end_pos, start_pos)
@@ -439,13 +441,11 @@ class AI(RealtimeAI):
         elif site_pos[1] and ESoundIntensity.Normal in agent.bomb_sounds:
             self.print("Normal sound bomb found: (%d, %d)" %(site_pos[1][0], site_pos[1][1]))
             dest = site_pos[1]
-        # TODO Check
         '''
         elif site_pos[2] and ESoundIntensity.Weak in agent.bomb_sounds:
             self.print("Weak sound bomb found: (%d, %d)" %(site_pos[2][0], site_pos[2][1]))
             dest = site_pos[2]
         '''
-        # TODO Change!
         # Checking that exact destination of a planted bomb is found!
         if dest is None or dest in self.police_defusing_site.values():
             return False            
@@ -515,10 +515,11 @@ class AI(RealtimeAI):
     
     def first_terrorist_strategy(self, agent:Terrorist):
         # If there's a police near, change direction and run!
-        police_positions, police_pos = [], None
-        for police in self.world.polices:
-            if AI._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
-                police_positions.append(police.position)
+        police_positions, police_pos, police = [], None, None
+        for polices in self.world.polices:
+            if AI._distance(polices.position, agent.position) <= self.world.constants.terrorist_vision_distance:
+                police_positions.append(polices.position)
+                police = polices
         # Escaping from two or more polices:
         if len(police_positions) > 1:
             escape_directions = self._escape_direction(agent, police_positions[0])[1]
@@ -541,22 +542,30 @@ class AI(RealtimeAI):
                 return True
         elif len(police_positions) == 1:
             police_pos = police_positions[0]
+            # A police found around, let's make sure that he/she is defusing a bomb or not:
+            for bomb in self.world.bombs:
+                if bomb.defuser_id == police.id:
+                    # Police is defusing a bomb, let's escape from a better way!
+                    self.bomb_defuser_pos = (police.position.y, police.position.x)
+                    black_pos = self._calculate_black_pos(agent)
+                    # Although we are not escaping from a police, we should watch out for defuser police position! 
+                    black_pos.append(self.bomb_defuser_pos)
+                    g = Graph(self.world, (agent.position.y, agent.position.x), black_pos)
+                    dest = self._terrorist_destination(agent, (police_pos.y, police_pos.x))
+                    path = g.bfs(dest)
+                    if police.defusion_remaining_time and police.defusion_remaining_time < len(path):
+                        aim_point = path[police.defusion_remaining_time-1]
+                        if self._distance(police.position, Position(aim_point[1], aim_point[0])) > self.world.constants.police_vision_distance:
+                            # Escapeeeeeeee.
+                            police_pos = None
+                            self.terrorist_bomb_site[agent.id] = dest
+                            self.path[agent.id] = path
+                            break
         '''
         police_pos = None
         for police in self.world.polices:
             if AI._distance(police.position, agent.position) <= self.world.constants.terrorist_vision_distance:
                 police_pos = police.position
-                # A police found around, let's make sure that he/she is defusing a bomb or not:
-                for bomb in self.world.bombs:
-                    if bomb.defuser_id == police.id and police.defusion_remaining_time > self.world.constants.police_vision_distance:
-                        # Police is defusing a bomb, let's escape from a better way!
-                        self.bomb_defuser_pos = (police.position.y, police.position.x)
-                        police_pos = None
-                        if agent.id in self.terrorist_bomb_site:
-                            del self.terrorist_bomb_site[agent.id]
-                        if agent.id in self.path:
-                            del self.path[agent.id]
-                        break
                 '''
         if police_pos:
             selected_direction = self._escape_direction(agent, police_pos)[0]
@@ -569,7 +578,6 @@ class AI(RealtimeAI):
                 self.move(agent.id, selected_direction)
             else:
                 # Let's try our chance and speculate where police wants to go after this cycle, then escape!
-                # TODO Check
                 stay = False
                 for bomb in self.world.bombs:
                     if self._distance(bomb.position, agent.position) <= self.world.constants.terrorist_vision_distance:
@@ -656,8 +664,7 @@ class AI(RealtimeAI):
     def third_terrorist_strategy(self, agent:Terrorist):
         if agent.planting_remaining_time != -1:  
             strong_sound_const, police_vision = self.world.constants.sound_ranges[ESoundIntensity.Strong], self.world.constants.police_vision_distance
-            # TODO Check
-            if self.strong_sounds[agent.id] >= strong_sound_const - (police_vision+1):
+            if self.strong_sounds[agent.id] >= strong_sound_const - (police_vision+2):
                 self.print("Near police detected while terrorist %d was planting a bomb." %(agent.id))
                 # Survive is better than planting this bomb.
                 self.move(agent.id, self._bombsite_direction(agent))
@@ -687,30 +694,9 @@ class AI(RealtimeAI):
         return False
     
     def fifth_terrorist_strategy(self, agent:Terrorist):
-        if agent.id in self.terrorist_bomb_site:
-            dest = self.terrorist_bomb_site[agent.id]
-        else:
-            # Let's find a path to nearest free bomb site for this lucky terrorist:
-            bombsite_index, min_distance = -1, float("inf")
-            for index, bombsite in enumerate(self.free_bomb_sites):
-                path = Graph(self.world, (agent.position.y, agent.position.x), [self.bomb_defuser_pos] if self.bomb_defuser_pos else []).bfs(bombsite)
-                distance = float("inf") if path is None else len(path) // self._ecell_score(self.world.board[bombsite[0]][bombsite[1]]) 
-                if distance < min_distance:
-                    bombsite_index, min_distance = index, distance
-            if bombsite_index != -1:
-                # There exists a bombsite!
-                dest = self.free_bomb_sites[bombsite_index]
-                self.print("Terrorist with id %d wants bombsite (%d, %d)." %(agent.id, dest[0], dest[1]))
-                self.terrorist_bomb_site[agent.id] = dest
-                self.free_bomb_sites.pop(bombsite_index)
-            else:
-                dest = None
+        dest = self._terrorist_destination(agent)
         if dest:
-            black_pos = self._calculate_black_pos(agent)
-            # Although we are not escaping from a police, we should watch out for defuser police position! 
-            if self.bomb_defuser_pos:
-                black_pos.append(self.bomb_defuser_pos)
-            g = Graph(self.world, (agent.position.y, agent.position.x), black_pos)
+            g = Graph(self.world, (agent.position.y, agent.position.x), self._calculate_black_pos(agent))
             path = g.bfs(dest)
             if path:
                 # Move!
@@ -725,6 +711,28 @@ class AI(RealtimeAI):
                     return True
                 # Your way is closed:) please wait.
         return False
+    
+    def _terrorist_destination(self, agent:Terrorist, police_danger_pos:tuple=None):
+        dest = None
+        if agent.id in self.terrorist_bomb_site:
+            dest = self.terrorist_bomb_site[agent.id]
+        else:
+            # Let's find a path to nearest free bomb site for this lucky terrorist:
+            bombsite_index, min_distance = -1, float("inf")
+            for index, bombsite in enumerate(self.free_bomb_sites):
+                if police_danger_pos and abs(bombsite[0]-police_danger_pos[0]) + abs(bombsite[1]-police_danger_pos[1]) <= self.world.constants.police_vision_distance:
+                    continue
+                path = Graph(self.world, (agent.position.y, agent.position.x), [self.bomb_defuser_pos] if self.bomb_defuser_pos else []).bfs(bombsite)
+                distance = float("inf") if path is None else len(path) // self._ecell_score(self.world.board[bombsite[0]][bombsite[1]]) 
+                if distance < min_distance:
+                    bombsite_index, min_distance = index, distance
+            if bombsite_index != -1:
+                # There exists a bombsite!
+                dest = self.free_bomb_sites[bombsite_index]
+                self.print("Terrorist with id %d wants bombsite (%d, %d)." %(agent.id, dest[0], dest[1]))
+                self.terrorist_bomb_site[agent.id] = dest
+                self.free_bomb_sites.pop(bombsite_index)
+        return dest
     
     def _empty_directions(self, agent):
         # Adjacent empty cells of a position make some directions...
